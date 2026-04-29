@@ -1,0 +1,269 @@
+:root {
+    /* Colors - Casino Theme */
+    --casino-green: #0f5132;
+    --casino-green-light: #198754;
+    --casino-green-dark: #0a3622;
+    --wood-dark: #3e2723;
+    --wood-light: #5d4037;
+    --gold: #ffc107;
+    --silver: #e0e0e0;
+    --bronze: #cd7f32;
+    --blood-red: #dc3545;
+    
+    /* Change Base UI to Casino Theme globally */
+    --bg-color: #1a0f0a; /* Deep wood background */
+    --surface-color: #0a3622; /* Casino Green panel */
+    --text-primary: #ffffff;
+    --text-secondary: #e0e0e0;
+    --border-color: #5d4037; /* Wood light border */
+    
+    /* Chips / Actions */
+    --chip-red: #d32f2f;
+    --chip-blue: #1976d2;
+    --chip-black: #212121;
+    --chip-green: #388e3c;
+    
+    --action-fold: #f44336;
+    --action-check: #9e9e9e;
+    --action-call: #2196f3;
+    --action-bet: #4caf50;
+
+    /* Typography */
+    --font-primary: 'Inter', sans-serif;
+    --font-serif: 'Playfair Display', serif;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none; /* Prevent text selection in mobile app */
+}
+
+body {
+    font-family: var(--font-primary);
+    background: radial-gradient(circle at center, #3e2723 0%, var(--bg-color) 100%);
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden; /* Prevent scrolling, handle internally */
+    -webkit-font-smoothing: antialiased;
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    position: relative;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* --- Top Navigation --- */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: rgba(30, 30, 30, 0.8);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-color);
+    z-index: 100;
+}
+
+.icon-btn {
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.2s;
+}
+
+.icon-btn:active {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+#top-pot-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.pot-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.pot-amount {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--gold);
+}
+
+/* --- Main Content Layouts --- */
+main {
+    flex: 1;
+    overflow-y: auto;
+    position: relative;
+    padding: 1rem;
+}
+
+/* Wood & Green Table aesthetic */
+.poker-table-bg {
+    background: radial-gradient(circle, var(--casino-green-light) 0%, var(--casino-green-dark) 80%);
+    border: 12px solid var(--wood-dark);
+    border-radius: 50px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.5), 0 10px 40px rgba(0,0,0,0.9);
+    position: relative;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+/* --- Floating Elements --- */
+.floating-btn {
+    position: absolute;
+    background: var(--surface-color);
+    color: var(--gold);
+    border: 1px solid var(--gold);
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    cursor: pointer;
+    z-index: 90;
+    transition: transform 0.2s;
+}
+
+.floating-btn:active {
+    transform: scale(0.95);
+}
+
+.bottom-right {
+    bottom: 20px;
+    right: 20px;
+}
+
+/* --- Modals & Overlays --- */
+.modal-backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+
+.modal {
+    background: var(--surface-color);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 400px;
+    padding: 1.5rem;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    border: 1px solid var(--border-color);
+}
+
+.bottom-sheet {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--surface-color);
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+    padding: 1.5rem;
+    box-shadow: 0 -5px 30px rgba(0,0,0,0.5);
+    z-index: 150;
+    transform: translateY(0);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.bottom-sheet.slide-down {
+    transform: translateY(100%);
+}
+
+/* Buttons */
+.btn {
+    width: 100%;
+    padding: 1rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface-color);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+.btn-primary {
+    background: var(--gold);
+    color: #000;
+    border: none;
+}
+
+.btn-primary:active {
+    background: #e6ae00;
+    transform: scale(0.98);
+}
+
+.btn-danger {
+    background: var(--action-fold);
+    color: white;
+}
+
+/* Inputs */
+.input-group {
+    margin-bottom: 1rem;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 1rem;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: white;
+    font-size: 1rem;
+    outline: none;
+}
+
+.input-group input:focus {
+    border-color: var(--gold);
+}
+
+/* Typography styles for game over */
+.text-gold { color: var(--gold); font-family: var(--font-serif); text-shadow: 0 0 10px rgba(255,193,7,0.5); }
+.text-silver { color: var(--silver); font-family: var(--font-serif); }
+.text-bronze { color: var(--bronze); font-family: var(--font-serif); }
+.text-blood { 
+    color: var(--blood-red); 
+    font-family: var(--font-serif);
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+    /* Simple drip effect simulation */
+    border-bottom: 2px solid var(--blood-red);
+}

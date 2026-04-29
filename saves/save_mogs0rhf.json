@@ -1,0 +1,170 @@
+{
+  "saveId": "mogs0rhf",
+  "savedAt": "2026-04-27T05:48:29.859Z",
+  "playerNames": [
+    "Host",
+    "Joinee 1"
+  ],
+  "playerCount": 2,
+  "gameState": {
+    "phase": "preflop",
+    "players": [
+      {
+        "id": "0G0Yu3e3Jb54MF0IAAAx",
+        "name": "Host",
+        "stack": 1224,
+        "folded": false
+      },
+      {
+        "id": "xq5-zTNIilKpDvK_AAAv",
+        "name": "Joinee 1",
+        "stack": 761,
+        "folded": false
+      }
+    ],
+    "cfg": {
+      "sb": 5,
+      "bb": 10,
+      "sessions": 3
+    },
+    "pot": 15,
+    "cp": [],
+    "dealer": 1,
+    "actI": 0,
+    "queue": [
+      1,
+      0
+    ],
+    "hc": {
+      "xq5-zTNIilKpDvK_AAAv": 5,
+      "0G0Yu3e3Jb54MF0IAAAx": 10
+    },
+    "ai": [],
+    "rBets": {
+      "0": 10,
+      "1": 5
+    },
+    "curBet": 10,
+    "lr": 10,
+    "lfb": 10,
+    "scores": {
+      "0G0Yu3e3Jb54MF0IAAAx": 0,
+      "xq5-zTNIilKpDvK_AAAv": 0
+    },
+    "history": [
+      {
+        "sn": 1,
+        "hn": 1,
+        "wid": "Joinee 1",
+        "wname": "Joinee 1",
+        "net": {
+          "0G0Yu3e3Jb54MF0IAAAx": 0,
+          "xq5-zTNIilKpDvK_AAAv": 500
+        },
+        "acts": [
+          {
+            "id": "xq5-zTNIilKpDvK_AAAv",
+            "type": "call",
+            "amt": 5
+          },
+          {
+            "id": "0G0Yu3e3Jb54MF0IAAAx",
+            "type": "check",
+            "amt": 0
+          },
+          {
+            "id": "0G0Yu3e3Jb54MF0IAAAx",
+            "type": "check",
+            "amt": 0
+          },
+          {
+            "id": "xq5-zTNIilKpDvK_AAAv",
+            "type": "raise",
+            "amt": 480
+          },
+          {
+            "id": "0G0Yu3e3Jb54MF0IAAAx",
+            "type": "fold",
+            "amt": 0
+          }
+        ]
+      },
+      {
+        "sn": 1,
+        "hn": 2,
+        "wid": "Host",
+        "wname": "Host",
+        "hr": "Royal Flush",
+        "net": {
+          "0G0Yu3e3Jb54MF0IAAAx": 0,
+          "xq5-zTNIilKpDvK_AAAv": 0
+        },
+        "acts": [
+          {
+            "id": "0G0Yu3e3Jb54MF0IAAAx",
+            "type": "call",
+            "amt": 5
+          },
+          {
+            "id": "xq5-zTNIilKpDvK_AAAv",
+            "type": "check",
+            "amt": 0
+          },
+          {
+            "id": "xq5-zTNIilKpDvK_AAAv",
+            "type": "raise",
+            "amt": 234
+          },
+          {
+            "id": "0G0Yu3e3Jb54MF0IAAAx",
+            "type": "call",
+            "amt": 234
+          },
+          {
+            "id": "xq5-zTNIilKpDvK_AAAv",
+            "type": "check",
+            "amt": 0
+          },
+          {
+            "id": "0G0Yu3e3Jb54MF0IAAAx",
+            "type": "check",
+            "amt": 0
+          },
+          {
+            "id": "xq5-zTNIilKpDvK_AAAv",
+            "type": "check",
+            "amt": 0
+          },
+          {
+            "id": "0G0Yu3e3Jb54MF0IAAAx",
+            "type": "check",
+            "amt": 0
+          }
+        ]
+      }
+    ],
+    "undoStack": [],
+    "pi": 0,
+    "hn": 3,
+    "sn": 1,
+    "log": [
+      "Joinee 1 — first to act",
+      "BB: Host (10)",
+      "SB: Joinee 1 (5)",
+      "Dealer: Joinee 1",
+      "─ Hand #3 | Sess 1/3 ─"
+    ],
+    "curActs": [],
+    "origSt": {
+      "0G0Yu3e3Jb54MF0IAAAx": 1000,
+      "xq5-zTNIilKpDvK_AAAv": 1000
+    },
+    "sbI": 1,
+    "bbI": 0,
+    "wi": null,
+    "ba": "Raise",
+    "potAward": null
+  },
+  "handNumber": 3,
+  "sessionNumber": 1
+}

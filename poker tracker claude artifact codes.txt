@@ -1,0 +1,312 @@
+import{useState,useEffect}from"react";
+const G="#f0c040",SV="#aab4be",BR="#cd7f32",DIM="rgba(255,255,255,0.4)",SKEY="ptv7";
+const MED=["🥇","🥈","🥉","4th","5th","6th","7th","8th","9th","10th"];
+const TIERS=[["High Card","One Pair","Two Pair","Three of a Kind"],["Straight","Flush","Full House"],["Four of a Kind","Straight Flush","Royal Flush"]];
+const RV={"High Card":1,"One Pair":2,"Two Pair":3,"Three of a Kind":4,"Straight":5,"Flush":6,"Full House":7,"Four of a Kind":8,"Straight Flush":9,"Royal Flush":10};
+const PPH={preflop:"preflop_start",flop_reveal:"preflop_start",flop:"flop_reveal",turn_reveal:"flop_reveal",turn:"turn_reveal",river_reveal:"turn_reveal",river:"river_reveal",showdown:"river_reveal"};
+const PL={preflop_start:"PRE-FLOP",preflop:"PRE-FLOP",flop_reveal:"FLOP",flop:"FLOP",turn_reveal:"TURN",turn:"TURN",river_reveal:"RIVER",river:"RIVER",showdown:"SHOWDOWN",end:"HAND OVER",session_end:"SESSION OVER"};
+const RVLI={flop_reveal:{t:"THE FLOP",s:"Reveal 3 community cards",i:"🃏 🃏 🃏"},turn_reveal:{t:"THE TURN",s:"Reveal the 4th card",i:"🃏"},river_reveal:{t:"THE RIVER",s:"Reveal the 5th card",i:"🃏"}};
+const NP={preflop:"flop_reveal",flop:"turn_reveal",turn:"river_reveal",river:"showdown"};
+
+const Btn=({onClick,bg,children,full,sm,dis})=><button onClick={dis?null:onClick} style={{background:bg||"#2a8a46",border:"none",borderRadius:10,color:"#fff",padding:sm?"7px 10px":"11px 15px",fontSize:sm?12:14,fontWeight:700,cursor:dis?"default":"pointer",opacity:dis?0.5:1,width:full?"100%":null,boxSizing:"border-box"}}>{children}</button>;
+const Card=({children,sx})=><div style={Object.assign({background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:16,padding:16,marginBottom:12},sx||{})}>{children}</div>;
+const Fld=({lbl,val,ch,ph,type,mb})=><div style={{marginBottom:mb||8}}>{lbl&&<div style={{color:DIM,fontSize:13,marginBottom:4}}>{lbl}</div>}<input type={type||"text"} value={val} onChange={ch} placeholder={ph} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:9,color:"#fff",padding:"10px 13px",fontSize:15,outline:"none",width:"100%",boxSizing:"border-box"}}/></div>;
+const Ov=({children})=><div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16,overflowY:"auto"}}><div style={{maxWidth:370,width:"100%"}}>{children}</div></div>;
+const DB=({children,sx})=><div style={Object.assign({background:"#0d2518",border:"1px solid rgba(240,192,64,0.4)",borderRadius:20,padding:22,boxSizing:"border-box"},sx||{})}>{children}</div>;
+const SR=({l,v,hi})=><div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.05)",fontSize:13}}><span style={{color:DIM,marginRight:6,flexShrink:0}}>{l}</span><span style={{color:hi?G:"#fff",fontWeight:hi?700:400,textAlign:"right"}}>{v}</span></div>;
+const SS=({title,children})=><div style={{marginBottom:12}}><div style={{color:G,fontWeight:700,fontSize:12,marginBottom:5,borderBottom:"1px solid rgba(240,192,64,0.2)",paddingBottom:3}}>{title}</div>{children}</div>;
+
+function buildPots(pls,cont,aiSet){
+  const ids=pls.map(p=>p.id);
+  if(!aiSet.length)return[{amount:ids.reduce((s,id)=>s+(cont[id]||0),0),eligible:pls.filter(p=>!p.folded),label:"Pot"}];
+  const lvls=[...new Set(aiSet.map(id=>cont[id]||0))].sort((a,b)=>a-b);
+  const pots=[],tc={...cont};let pv=0,pn=0;
+  for(const l of lvls){const cap=l-pv;let amt=0;ids.forEach(id=>{const t=Math.min(tc[id]||0,cap);amt+=t;tc[id]=(tc[id]||0)-t;});if(amt>0){pots.push({amount:amt,eligible:pls.filter(p=>!p.folded&&(cont[p.id]||0)>=l),label:pn===0?"Main Pot":"Side Pot "+pn});pn++;}pv=l;}
+  const rem=ids.reduce((s,id)=>s+(tc[id]||0),0);
+  if(rem>0)pots.push({amount:rem,eligible:pls.filter(p=>!p.folded&&!aiSet.includes(p.id)&&(cont[p.id]||0)>lvls[lvls.length-1]),label:"Side Pot"});
+  return pots;
+}
+function calcSPts(sorted){const n=sorted.length,pts={};sorted.forEach((p,i)=>{pts[p.id]=i===0?n:Math.max(0,n-1-i);});return pts;}
+function findP(arr,id){return arr.find(p=>p.id===id)||null;}
+function computeStats(hist,pls){
+  if(!hist||!hist.length)return null;
+  const ps={};pls.forEach(p=>{ps[p.id]={id:p.id,name:p.name,won:0,lost:0,folds:0,checks:0,raises:0,bet:0,bw:0,bl:0,bs:0,hr:[],hp:0};});
+  const sc={};
+  hist.forEach(h=>{
+    sc[h.sn]=(sc[h.sn]||0)+1;
+    pls.forEach(p=>{const st=ps[p.id];if(!st)return;st.hp++;const net=h.net[p.id]||0;if(p.id===h.wid){st.won++;if(net>st.bw)st.bw=net;if(h.hr)st.hr.push(h.hr);}else{st.lost++;if(Math.abs(net)>st.bl)st.bl=Math.abs(net);}});
+    (h.acts||[]).forEach(a=>{const st=ps[a.id];if(!st)return;if(a.t==="fold")st.folds++;else if(a.t==="check")st.checks++;else if(a.t==="raise"||a.t==="allin"){st.raises++;st.bet+=a.v;if(a.v>st.bs)st.bs=a.v;}});
+  });
+  const maxH=Math.max(...Object.values(sc),0),pArr=Object.values(ps);
+  const top=fn=>pArr.slice().sort((a,b)=>fn(b)-fn(a))[0]||null;
+  const hf={};pArr.forEach(p=>{const f={};p.hr.forEach(r=>{f[r]=(f[r]||0)+1;});hf[p.id]=Object.entries(f).sort((a,b)=>b[1]-a[1])[0]||null;});
+  return{pArr,maxH,top,hf,bestH:hist.filter(h=>h.hr).sort((a,b)=>(RV[b.hr]||0)-(RV[a.hr]||0))[0]||null,consistent:pArr.filter(p=>p.hp>0).sort((a,b)=>(b.won/b.hp)-(a.won/a.hp))[0]||null,inconsistent:pArr.filter(p=>p.hp>0).sort((a,b)=>(a.won/a.hp)-(b.won/b.hp))[0]||null};
+}
+function StatsMod({hist,pls,scores,onClose}){
+  const st=computeStats(hist,pls),nm=(x,f)=>x?x.name+(f?" ("+f(x)+")":""):"—";
+  return(<Ov><DB><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><span style={{color:G,fontWeight:800,fontSize:16}}>📊 Statistics</span><Btn sm bg="#333" onClick={onClose}>✕</Btn></div>
+  <div style={{maxHeight:"72vh",overflowY:"auto"}}>
+  {!st?<p style={{color:DIM,fontSize:13}}>No hands yet.</p>:<div>
+    <SS title="🏆 Performance"><SR l="Most won" v={nm(st.top(p=>p.won),p=>p.won)} hi/><SR l="Most lost" v={nm(st.top(p=>p.lost),p=>p.lost)}/><SR l="Most consistent" v={st.consistent?st.consistent.name:"—"} hi/><SR l="Most inconsistent" v={st.inconsistent?st.inconsistent.name:"—"}/><SR l="Max hands/session" v={st.maxH+""}/></SS>
+    <SS title="💰 Money"><SR l="Biggest single win" v={nm(st.top(p=>p.bw),p=>"+"+p.bw)} hi/><SR l="Biggest single loss" v={nm(st.top(p=>p.bl),p=>"-"+p.bl)}/><SR l="Highest total bets" v={nm(st.top(p=>p.bet),p=>p.bet)} hi/><SR l="Lowest total bets" v={nm(st.top(p=>-p.bet),p=>p.bet)}/><SR l="Biggest single bet" v={nm(st.top(p=>p.bs),p=>p.bs)}/></SS>
+    <SS title="🎲 Actions"><SR l="Most raises" v={nm(st.top(p=>p.raises),p=>p.raises)} hi/><SR l="Most checks" v={nm(st.top(p=>p.checks),p=>p.checks)}/><SR l="Most folds" v={nm(st.top(p=>p.folds),p=>p.folds)}/></SS>
+    <SS title="🃏 Best Hand Ever"><SR l="Hand" v={st.bestH?st.bestH.wname+": "+st.bestH.hr:"None"} hi/></SS>
+    <SS title="🎯 Fav Winning Hand">{st.pArr.map(p=><SR key={p.id} l={p.name} v={st.hf[p.id]?st.hf[p.id][0]+" ×"+st.hf[p.id][1]:"—"}/>)}</SS>
+    <SS title="🏅 Scores">{pls.slice().sort((a,b)=>(scores[b.id]||0)-(scores[a.id]||0)).map((p,i)=><SR key={p.id} l={MED[i]+" "+p.name} v={(scores[p.id]||0)+" pts"} hi={i===0}/>)}</SS>
+  </div>}
+  </div></DB></Ov>);
+}
+function CDlg({d,onClose,onConfirm}){return(<Ov><DB><div style={{textAlign:"center"}}>
+  <div style={{fontSize:40,marginBottom:8}}>{d.type==="winner"?"🏆":"🤝"}</div>
+  <p style={{color:G,fontWeight:800,fontSize:18,margin:"0 0 4px"}}>{d.type==="winner"?d.name+" Wins!":"Split Pot?"}</p>
+  <p style={{color:DIM,fontSize:13,margin:"0 0 4px"}}>{d.label}</p>
+  <p style={{color:G,fontSize:22,fontWeight:800,margin:"0 0 14px"}}>{d.amt} chips</p>
+  {d.names&&<p style={{color:DIM,fontSize:12,margin:"-8px 0 12px"}}>{d.names}</p>}
+  <div style={{display:"flex",gap:10}}><Btn full bg="rgba(255,255,255,0.1)" onClick={onClose}>Cancel</Btn><Btn full bg="#1a7a40" onClick={onConfirm}>Confirm ✓</Btn></div>
+</div></DB></Ov>);}
+function HRDlg({d,onSelect,setTier,onSkip}){return(<Ov><DB>
+  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+    {d.tier>0&&<button onClick={()=>setTier(d.tier-1)} style={{background:"none",border:"none",color:G,fontSize:22,cursor:"pointer",padding:0}}>←</button>}
+    <span style={{color:G,fontWeight:800,fontSize:15}}>What hand did they have?</span>
+  </div>
+  <div style={{display:"flex",flexDirection:"column",gap:7}}>
+    {TIERS[d.tier].map(h=><button key={h} onClick={()=>onSelect(h)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:10,color:"#fff",padding:"10px 14px",fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left"}}>{h}</button>)}
+    {d.tier<2&&<button onClick={()=>setTier(d.tier+1)} style={{background:"rgba(160,100,240,0.15)",border:"1px solid rgba(160,100,240,0.3)",borderRadius:10,color:"#c8a0ff",padding:"10px 14px",fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left"}}>Higher Ranks →</button>}
+    <button onClick={onSkip} style={{background:"none",border:"none",color:DIM,fontSize:12,cursor:"pointer",padding:"6px 0"}}>Skip / Unknown</button>
+  </div>
+</DB></Ov>);}
+function SSDlg({d,sel,setSel,onClose,onSplit}){return(<Ov><DB>
+  <p style={{color:G,fontWeight:800,marginTop:0}}>Select Players to Split</p>
+  <p style={{color:DIM,fontSize:13,margin:"0 0 10px"}}>{d.label}: {d.amt} chips</p>
+  {d.eligible.map(p=>{const s=sel.includes(p.id);return(<div key={p.id} onClick={()=>setSel(s?sel.filter(id=>id!==p.id):[...sel,p.id])} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,marginBottom:5,background:s?"rgba(240,192,64,0.15)":"rgba(255,255,255,0.05)",border:s?"1px solid rgba(240,192,64,0.4)":"1px solid transparent",cursor:"pointer"}}>
+    <span style={{fontSize:18}}>{s?"☑":"☐"}</span><span style={{color:s?G:"#fff",fontWeight:s?700:400}}>{p.name}</span><span style={{marginLeft:"auto",color:DIM,fontSize:12}}>{p.stack}</span>
+  </div>);})}
+  <div style={{display:"flex",gap:8,marginTop:10}}>
+    <Btn full bg="rgba(255,255,255,0.1)" onClick={onClose}>Cancel</Btn>
+    <Btn full bg={sel.length>=2?"#1a7a40":"#444"} dis={sel.length<2} onClick={()=>onSplit(d.eligible.filter(p=>sel.includes(p.id)),d.amt,d.label)}>Split ({sel.length} sel.)</Btn>
+  </div>
+</DB></Ov>);}
+
+export default function App(){
+  const[screen,setScreen]=useState("count");
+  const[numP,setNumP]=useState("");
+  const[roster,setRoster]=useState([]);
+  const[editIdx,setEditIdx]=useState(null);
+  const[pName,setPName]=useState("");
+  const[pStack,setPStack]=useState("");
+  const[sbVal,setSbVal]=useState("");
+  const[bbVal,setBbVal]=useState("");
+  const[sessVal,setSessVal]=useState("");
+  const[cfg,setCfg]=useState(null);
+  const[players,setPlayers]=useState([]);
+  const[origSt,setOrigSt]=useState({});
+  const[dealer,setDealer]=useState(0);
+  const[pot,setPot]=useState(0);
+  const[curBet,setCurBet]=useState(0);
+  const[lr,setLr]=useState(0);
+  const[rBets,setRBets]=useState({});
+  const[queue,setQueue]=useState([]);
+  const[phase,setPhase]=useState("");
+  const[rm,setRm]=useState(false);
+  const[ra,setRa]=useState("");
+  const[mc,setMc]=useState(false);
+  const[ba,setBa]=useState("Bet");
+  const[log,setLog]=useState([]);
+  const[showSt,setShowSt]=useState(false);
+  const[hn,setHn]=useState(1);
+  const[sn,setSn]=useState(1);
+  const[wi,setWi]=useState(null);
+  const[gameOver,setGameOver]=useState(false);
+  const[goView,setGoView]=useState("main");
+  const[scores,setScores]=useState({});
+  const[sei,setSei]=useState(null);
+  const[hc,setHc]=useState({});
+  const[ai,setAi]=useState([]);
+  const[cp,setCp]=useState([]);
+  const[pi,setPi]=useState(0);
+  const[cdlg,setCdlg]=useState(null);
+  const[hrd,setHrd]=useState(null);
+  const[sseld,setSseld]=useState(null);
+  const[ssel,setSsel]=useState([]);
+  const[showStats,setShowStats]=useState(false);
+  const[history,setHistory]=useState([]);
+  const[curActs,setCurActs]=useState([]);
+  const[savedGame,setSavedGame]=useState(null);
+  const[saveReady,setSaveReady]=useState(false);
+
+  useEffect(()=>{window.storage.get(SKEY).then(r=>{if(r&&r.value){try{setSavedGame(JSON.parse(r.value));}catch(e){}}setSaveReady(true);}).catch(()=>setSaveReady(true));},[]);
+  useEffect(()=>{if(!cfg)return;const snap={cfg,players,origSt,dealer,pot,curBet,lr,rBets,queue,phase,log,hn,sn,wi,scores,sei,hc,ai,cp,pi,history,ba};window.storage.set(SKEY,JSON.stringify(snap)).catch(()=>{});},[phase,players,pot,scores,history,sn,hn]);
+
+  const n=players.length,actI=queue.length>0?queue[0]:-1,actP=actI>=0?players[actI]:null;
+  const toCall=actI>=0?Math.max(0,curBet-(rBets[actI]||0)):0;
+  const sbI=n>1?(dealer+1)%n:0,bbI=n>1?(dealer+2)%n:0;
+  const isBet=["preflop","flop","turn","river"].includes(phase),rvli=RVLI[phase]||null,cpd=cp.length>0?cp[pi]:null;
+  const addLog=m=>setLog(p=>[m,...p.slice(0,39)]);
+  const addAct=(id,t,v)=>setCurActs(a=>[...a,{id,t,v:v||0}]);
+
+  function resumeGame(){const s=savedGame;if(!s)return;setCfg(s.cfg||null);setPlayers(s.players||[]);setOrigSt(s.origSt||{});setDealer(s.dealer||0);setPot(s.pot||0);setCurBet(s.curBet||0);setLr(s.lr||0);setRBets(s.rBets||{});setQueue(s.queue||[]);setPhase(s.phase||"preflop_start");setLog(s.log||[]);setHn(s.hn||1);setSn(s.sn||1);setWi(s.wi||null);setScores(s.scores||{});setSei(s.sei||null);setHc(s.hc||{});setAi(s.ai||[]);setCp(s.cp||[]);setPi(s.pi||0);setHistory(s.history||[]);setBa(s.ba||"Bet");setSavedGame(null);}
+  function goBack(){const prev=PPH[phase];if(!prev)return;setPhase(prev);setQueue([]);setRBets({});setCurBet(0);if(cfg)setLr(cfg.bb);setRm(false);setRa("");setMc(false);addLog("← "+(PL[prev]||prev));}
+  function startHand(pls,dI,c,h,s){
+    const nn=pls.length,si=(dI+1)%nn,bi=(dI+2)%nn,sa=Math.min(c.sb,pls[si].stack),ba2=Math.min(c.bb,pls[bi].stack);
+    const np=pls.map((p,i)=>({...p,folded:false,stack:p.stack-(i===si?sa:i===bi?ba2:0)}));
+    const q=Array.from({length:nn},(_,k)=>(bi+1+k)%nn),hc2={};np.forEach((p,i)=>{hc2[p.id]=i===si?sa:i===bi?ba2:0;});
+    setPlayers(np);setDealer(dI);setPot(sa+ba2);setCurBet(ba2);setLr(c.bb);setRBets({[si]:sa,[bi]:ba2});setQueue(q);setPhase("preflop_start");
+    setHn(h);setSn(s);setWi(null);setRm(false);setRa("");setMc(false);setHc(hc2);setAi([]);setCp([]);setPi(0);setCurActs([]);setBa("Raise");
+    setLog(["First: "+np[q[0]].name,"BB: "+pls[bi].name+" ("+ba2+")","SB: "+pls[si].name+" ("+sa+")","Dealer: "+pls[dI].name,"─ Hand #"+h+" | Sess "+s+"/"+c.sessions+" ─"]);
+  }
+  function advance(nq,pls,ph2,hcN,aiN){
+    const alive=nq.filter(i=>!pls[i].folded);
+    if(!alive.length){setQueue([]);setRBets({});setCurBet(0);if(cfg)setLr(cfg.bb);setMc(false);setBa("Bet");const nxt=NP[ph2];setPhase(nxt);if(nxt==="showdown"){const h2=hcN||hc,a2=aiN||ai,c2=buildPots(pls,h2,a2);setCp(c2);setPi(0);addLog("─ SHOWDOWN ─");}else addLog(nxt.replace("_reveal","").toUpperCase()+" ROUND");}
+    else{setQueue(alive);addLog(pls[alive[0]].name+" — your action");}
+  }
+  function doFold(){const i=actI,np=players.map((p,j)=>j===i?{...p,folded:true}:p);addAct(players[i].id,"fold",0);setPlayers(np);addLog(players[i].name+" folds");if(np.filter(p=>!p.folded).length===1){awardFinal(np.findIndex(p=>!p.folded),np,pot);return;}advance(queue.slice(1).filter(j=>!np[j].folded),np,phase,hc,ai);}
+  function doCheck(){addAct(players[actI].id,"check",0);addLog(players[actI].name+" checks");advance(queue.slice(1).filter(j=>!players[j].folded),players,phase,hc,ai);}
+  function doCall(){const i=actI,amt=Math.min(toCall,players[i].stack),np=players.map((p,j)=>j===i?{...p,stack:p.stack-amt}:p),nRB={...rBets,[i]:(rBets[i]||0)+amt},nHC={...hc,[players[i].id]:(hc[players[i].id]||0)+amt};addAct(players[i].id,"call",amt);setPot(pot+amt);setPlayers(np);setRBets(nRB);setHc(nHC);addLog(players[i].name+" calls "+amt);advance(queue.slice(1).filter(j=>!np[j].folded),np,phase,nHC,ai);}
+  function doRaise(){const ra2=Number(ra);if(!ra2||ra2<lr){alert("Min raise: "+lr);return;}const i=actI,prev=rBets[i]||0,cost=Math.min(curBet+ra2-prev,players[i].stack),actual=prev+cost;const np=players.map((p,j)=>j===i?{...p,stack:p.stack-cost}:p),nRB={...rBets,[i]:actual},nHC={...hc,[players[i].id]:(hc[players[i].id]||0)+cost};addAct(players[i].id,"raise",ra2);setPot(pot+cost);setPlayers(np);setRBets(nRB);setHc(nHC);setCurBet(actual);setLr(ra2);const nba=ba==="Bet"?"Raise":"Re-raise";setBa(nba);addLog(players[i].name+" "+ba.toLowerCase()+"s +"+ra2+" → "+actual);const nq=[];for(let k=1;k<n;k++){const ni=(i+k)%n;if(!np[ni].folded)nq.push(ni);}setRm(false);setRa("");setMc(false);advance(nq,np,phase,nHC,ai);}
+  function doAllIn(){const i=actI,ac=players[i].stack;if(!ac)return;const prev=rBets[i]||0,actual=prev+ac,np=players.map((p,j)=>j===i?{...p,stack:0}:p),nRB={...rBets,[i]:actual},nHC={...hc,[players[i].id]:(hc[players[i].id]||0)+ac},nAI=[...ai,players[i].id];addAct(players[i].id,"allin",ac);setPot(pot+ac);setPlayers(np);setRBets(nRB);setHc(nHC);setAi(nAI);setRm(false);setRa("");setMc(false);addLog(players[i].name+" ALL IN! ("+ac+")");if(actual>curBet){const r2=actual-curBet;setCurBet(actual);if(r2>=lr)setLr(r2);setBa(ba==="Bet"?"Raise":"Re-raise");const nq=[];for(let k=1;k<n;k++){const ni=(i+k)%n;if(!np[ni].folded)nq.push(ni);}advance(nq,np,phase,nHC,nAI);}else advance(queue.slice(1).filter(j=>!np[j].folded),np,phase,nHC,nAI);}
+  function proceedReveal(){const bp=phase.replace("_reveal","");setRBets({});setCurBet(0);if(cfg)setLr(cfg.bb);setPhase(bp);setMc(false);setBa("Bet");const q=[];for(let k=1;k<=n;k++){const idx=(dealer+k)%n;if(!players[idx].folded)q.push(idx);}setQueue(q);if(q.length>0)addLog(players[q[0]].name+" — first to act");}
+  function checkBankruptcy(np,sc){if(!np.some(p=>p.stack===0))return false;const sorted=np.slice().sort((a,b)=>b.stack-a.stack),pts=calcSPts(sorted),ns={...sc};sorted.forEach(p=>{ns[p.id]=(ns[p.id]||0)+(pts[p.id]||0);});setScores(ns);setSei({rankings:sorted,pts,ns});setPhase("session_end");return true;}
+  function recHand(np,wid,amt,hr){const net={};np.forEach(pl=>{net[pl.id]=-(hc[pl.id]||0);});net[wid]=(net[wid]||0)+amt;const wp=findP(np,wid);setHistory(h=>[...h,{hn,sn,wid,wname:wp?wp.name:"",potSize:amt,net,acts:curActs,hr:hr||null}]);}
+  function awardFinal(wi2,pls,p){const base=pls||players,np=base.map((pl,i)=>i===wi2?{...pl,stack:pl.stack+p}:pl);setPlayers(np);setPot(0);setWi({name:np[wi2].name,amt:p});addLog(np[wi2].name+" wins "+p+"!");if(!checkBankruptcy(np,scores))setPhase("end");}
+  function runRem(idx,pls,fw,fa){let cur=pls,ci=idx;while(ci<cp.length){const c2=cp[ci];if(!c2.eligible.length){addLog(c2.label+" → bank");ci++;}else if(c2.eligible.length===1){const w=c2.eligible[0];cur=cur.map(p=>p.id===w.id?{...p,stack:p.stack+c2.amount}:p);addLog(w.name+" gets "+c2.label+": "+c2.amount);ci++;}else break;}setPlayers(cur);setPot(0);if(ci>=cp.length){setWi({name:fw,amt:fa});if(!checkBankruptcy(cur,scores))setPhase("end");setPi(0);}else setPi(ci);}
+  function finalWin(wid,hr){const c2=cp[pi];if(!c2)return;const np=players.map(p=>p.id===wid?{...p,stack:p.stack+c2.amount}:p),wp=findP(players,wid),wname=wp?wp.name:"";recHand(np,wid,c2.amount,hr);addLog(wname+" wins "+c2.label+": "+c2.amount+(hr?" ["+hr+"]":""));runRem(pi+1,np,wname,c2.amount);}
+  function finalSplit(elig,amount){const share=Math.floor(amount/elig.length),rem=amount%elig.length,np=players.map(p=>{const idx=elig.findIndex(e=>e.id===p.id);if(idx<0)return p;return{...p,stack:p.stack+share+(idx<rem?1:0)};});addLog("Split "+amount+" → "+elig.map(e=>e.name).join(" & "));runRem(pi+1,np,"Split",amount);}
+  function doConfirm(){const d=cdlg;if(!d)return;setCdlg(null);if(d.type==="winner"){const c2=cp[pi];setHrd({tier:0,wi:d.id,label:c2?c2.label:"Pot"});}else if(d.type==="split")finalSplit(d.eligible,d.amt);}
+  function nextSession(){const ns=sn+1;if(ns>cfg.sessions){setGameOver(true);return;}const rp=players.map(p=>({...p,stack:origSt[p.id]||p.stack,folded:false}));startHand(rp,(dealer+1)%n,cfg,hn+1,ns);}
+  function addOrEditPlayer(){const s=Number(pStack);if(!pName.trim()||!s){alert("Enter name & stack");return;}const p={name:pName.trim(),stack:s};if(editIdx!==null){const nl=roster.map((r,i)=>i===editIdx?p:r);setRoster(nl);setEditIdx(null);setPName("");setPStack("");}else{const nl=[...roster,p];setRoster(nl);setPName("");if(nl.length>=parseInt(numP)){setScreen("settings");setPStack("");}else setPStack(String(nl[0].stack));}}
+
+  const pg={minHeight:"100vh",background:"linear-gradient(160deg,#071a0e,#0d3320 60%,#0a1508)",color:"#fff",padding:"12px 14px",fontFamily:"'Segoe UI',sans-serif",boxSizing:"border-box"};
+  const wp={maxWidth:460,margin:"0 auto"};
+
+  if(!cfg){const tot=parseInt(numP)||0;return(<div style={pg}><div style={wp}>
+    <div style={{textAlign:"center",padding:"18px 0 12px"}}><div style={{fontSize:44}}>🃏</div><h1 style={{fontSize:22,fontWeight:800,color:G,margin:"5px 0 2px"}}>POKER TRACKER</h1><p style={{color:DIM,margin:0,fontSize:12}}>Texas Hold'em Session Manager</p></div>
+    {savedGame&&saveReady&&<Card sx={{border:"1px solid rgba(240,192,64,0.4)"}}>
+      <p style={{color:G,fontWeight:800,marginTop:0}}>💾 Resume Game</p>
+      <p style={{color:DIM,fontSize:13,margin:"0 0 6px"}}>Sess {savedGame.sn}/{savedGame.cfg&&savedGame.cfg.sessions} · Hand #{savedGame.hn}</p>
+      {savedGame.players&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:10}}>{savedGame.players.map(p=><span key={p.id} style={{background:"rgba(255,255,255,0.08)",borderRadius:6,padding:"2px 7px",fontSize:11,color:DIM}}>{p.name}: {p.stack}</span>)}</div>}
+      <div style={{display:"flex",gap:8}}><Btn full onClick={resumeGame}>Resume</Btn><Btn full bg="#444" onClick={()=>setSavedGame(null)}>New Game</Btn></div>
+    </Card>}
+    {(!savedGame||!saveReady)&&screen==="count"&&<Card><p style={{color:G,fontWeight:700,marginTop:0}}>How many players?</p><Fld lbl="Players (2–10)" val={numP} ch={e=>setNumP(e.target.value)} ph="e.g. 6" type="number"/><Btn full onClick={()=>tot>=2&&tot<=10?setScreen("players"):alert("Enter 2–10")}>Continue</Btn></Card>}
+    {(!savedGame||!saveReady)&&screen==="players"&&<Card>
+      <p style={{color:G,fontWeight:700,marginTop:0}}>{editIdx!==null?"Edit Player "+(editIdx+1):"Player "+(roster.length+1)+" of "+numP}</p>
+      {roster.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>{roster.map((p,i)=><span key={i} onClick={()=>{setEditIdx(i);setPName(roster[i].name);setPStack(String(roster[i].stack));}} style={{background:editIdx===i?"rgba(240,192,64,0.15)":"rgba(255,255,255,0.08)",border:editIdx===i?"1px solid "+G:"1px solid transparent",borderRadius:6,padding:"3px 9px",fontSize:12,color:editIdx===i?G:DIM,cursor:"pointer"}}>✏️ {p.name} ({p.stack})</span>)}</div>}
+      <Fld lbl="Name" val={pName} ch={e=>setPName(e.target.value)} ph="Player name"/>
+      <Fld lbl="Starting stack" val={pStack} ch={e=>setPStack(e.target.value)} ph={roster.length>0?String(roster[0].stack):"e.g. 1000"} type="number" mb={12}/>
+      <div style={{display:"flex",gap:8}}><Btn full onClick={addOrEditPlayer}>{editIdx!==null?"Save Edit":roster.length+1<tot?"Next Player":"Continue"}</Btn>{editIdx!==null&&<Btn bg="#444" onClick={()=>{setEditIdx(null);setPName("");setPStack("");}}>Cancel</Btn>}</div>
+    </Card>}
+    {(!savedGame||!saveReady)&&screen==="settings"&&<Card>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><button onClick={()=>setScreen("players")} style={{background:"none",border:"none",color:G,fontSize:22,cursor:"pointer",padding:0}}>←</button><span style={{color:G,fontWeight:700,fontSize:15}}>Game Settings</span></div>
+      <Fld lbl="Small Blind" val={sbVal} ch={e=>{setSbVal(e.target.value);setBbVal(String(Number(e.target.value)*2));}} ph="e.g. 5" type="number"/>
+      <Fld lbl="Big Blind (auto = 2×SB)" val={bbVal} ch={e=>setBbVal(e.target.value)} ph="e.g. 10" type="number"/>
+      <Fld lbl="Sessions" val={sessVal} ch={e=>setSessVal(e.target.value)} ph="e.g. 3" type="number" mb={12}/>
+      <Btn full onClick={()=>{const sb=Number(sbVal),bb=Number(bbVal),sess=Number(sessVal);if(!sb||!bb||!sess||bb<=sb){alert("BB > SB, sessions > 0");return;}const c={sb,bb,sessions:sess};setCfg(c);const pls=roster.map((p,i)=>({id:i,name:p.name,stack:p.stack,folded:false}));const os={},is={};pls.forEach(p=>{os[p.id]=p.stack;is[p.id]=0;});setOrigSt(os);setPlayers(pls);setScores(is);setHistory([]);startHand(pls,0,c,1,1);}}>🎲 Start Game</Btn>
+    </Card>}
+  </div></div>);}
+
+  if(gameOver){
+    const gs=players.slice().sort((a,b)=>(scores[b.id]||0)-(scores[a.id]||0)),li=gs.length-1;
+    if(goView==="scores")return(<div style={pg}><div style={wp}><div style={{display:"flex",alignItems:"center",gap:8,padding:"14px 0 10px"}}><button onClick={()=>setGoView("main")} style={{background:"none",border:"none",color:G,fontSize:22,cursor:"pointer",padding:0}}>←</button><h2 style={{color:G,margin:0}}>Final Scoreboard</h2></div><Card>{gs.map((p,i)=>{const clr=i===0?G:i===1?SV:i===2?BR:i===li?"#ff3333":"#fff";return(<div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"9px 4px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><span style={{color:clr,fontWeight:i===0?800:400}}>{i===0?"👑 ":""}{MED[i]} {p.name}</span><span style={{color:clr,fontWeight:700}}>{scores[p.id]||0} pts</span></div>);})}</Card>{showStats&&<StatsMod hist={history} pls={players} scores={scores} onClose={()=>setShowStats(false)}/>}<Btn full bg="#444" onClick={()=>setShowStats(true)}>📊 Statistics</Btn></div></div>);
+    return(<div style={pg}>
+      <style>{`.drip{color:#ff2222;animation:dr 2s infinite;font-weight:800}@keyframes dr{0%,100%{text-shadow:0 0 0 #f00}50%{text-shadow:0 3px 10px #f00,0 8px 5px #800}}`}</style>
+      <div style={wp}>
+        <div style={{textAlign:"center",padding:"16px 0 10px"}}><div style={{fontSize:44}}>🏁</div><h1 style={{color:G,fontSize:24,margin:"5px 0 2px"}}>GAME OVER</h1><p style={{color:DIM,fontSize:13}}>All {cfg.sessions} sessions complete!</p></div>
+        <Card>{gs.map((p,i)=>{const isW=i===0,isL=i===li,clr=isW?G:i===1?SV:i===2?BR:isL?"#ff3333":"#fff";return(<div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 6px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><span style={{color:clr,fontWeight:isW?800:400,fontSize:isW?17:14}}>{isW?"👑 ":""}{isL?<span className="drip">{p.name} ☠️</span>:<span>{MED[i]} {p.name}</span>}</span><span style={{color:clr,fontWeight:700}}>{scores[p.id]||0} pts</span></div>);})}</Card>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <Btn full onClick={()=>{setCfg(null);setScreen("count");setRoster([]);setNumP("");setSbVal("");setBbVal("");setSessVal("");setGameOver(false);setScores({});setHistory([]);setGoView("main");window.storage.delete(SKEY).catch(()=>{});}}>🔄 New Game</Btn>
+          <Btn full bg="#333" onClick={()=>setGoView("scores")}>📋 Scoreboard</Btn>
+          <Btn full bg="#333" onClick={()=>setShowStats(true)}>📊 Statistics</Btn>
+        </div>
+        {showStats&&<StatsMod hist={history} pls={players} scores={scores} onClose={()=>setShowStats(false)}/>}
+      </div>
+    </div>);
+  }
+
+  if(phase==="session_end"&&sei)return(<div style={pg}><div style={wp}>
+    <div style={{textAlign:"center",padding:"14px 0 10px"}}><div style={{fontSize:40}}>📊</div><h2 style={{color:G,margin:"5px 0 2px"}}>SESSION {sn} OVER</h2><p style={{color:DIM,margin:0,fontSize:13}}>{sei.rankings[sei.rankings.length-1].name} went bankrupt!</p></div>
+    <Card><p style={{color:G,fontWeight:700,marginTop:0,marginBottom:10}}>Session Rankings</p>{sei.rankings.map((p,i)=>{const pt=sei.pts[p.id]||0;return(<div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",borderRadius:10,marginBottom:4,background:i===0?"rgba(240,192,64,0.1)":"rgba(255,255,255,0.04)",border:i===0?"1px solid rgba(240,192,64,0.3)":"1px solid transparent"}}><span>{MED[i]} {p.name}</span><div><span style={{color:G,fontWeight:700}}>+{pt} pts</span><span style={{color:DIM,fontSize:12,marginLeft:8}}>({p.stack} chips)</span></div></div>);})}</Card>
+    <Card><p style={{color:G,fontWeight:700,marginTop:0,marginBottom:8}}>Cumulative Scores</p>{players.slice().sort((a,b)=>(sei.ns[b.id]||0)-(sei.ns[a.id]||0)).map((p,i)=><div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span>{MED[i]} {p.name}</span><span style={{color:G,fontWeight:700}}>{sei.ns[p.id]||0} pts</span></div>)}</Card>
+    <div style={{display:"flex",gap:8}}>{sn<cfg.sessions?<Btn full onClick={nextSession}>Next Session →</Btn>:<Btn full bg="#7a1a1a" onClick={()=>setGameOver(true)}>End Game</Btn>}<Btn bg="#333" onClick={()=>setShowStats(true)}>📊</Btn></div>
+    {showStats&&<StatsMod hist={history} pls={players} scores={sei.ns} onClose={()=>setShowStats(false)}/>}
+  </div></div>);
+
+  const sortedSt=players.slice().sort((a,b)=>b.stack-a.stack);
+  return(<div style={pg}><div style={wp}>
+    <button onClick={()=>setShowStats(true)} style={{position:"fixed",bottom:20,right:18,width:46,height:46,borderRadius:"50%",background:"rgba(240,192,64,0.92)",border:"none",fontSize:20,cursor:"pointer",zIndex:200}}>📊</button>
+    {showStats&&<StatsMod hist={history} pls={players} scores={scores} onClose={()=>setShowStats(false)}/>}
+    {cdlg&&<CDlg d={cdlg} onClose={()=>setCdlg(null)} onConfirm={doConfirm}/>}
+    {hrd&&<HRDlg d={hrd} onSelect={hr=>{const w=hrd.wi;setHrd(null);finalWin(w,hr);}} setTier={t=>setHrd({...hrd,tier:t})} onSkip={()=>{const w=hrd.wi;setHrd(null);finalWin(w,null);}}/>}
+    {sseld&&<SSDlg d={sseld} sel={ssel} setSel={setSsel} onClose={()=>{setSseld(null);setSsel([]);}} onSplit={(e,a,l)=>{const names=e.map(x=>x.name).join(" & ");setSseld(null);setSsel([]);setCdlg({type:"split",eligible:e,amt:a,label:l,names});}}/>}
+
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <div><div style={{fontSize:11,color:DIM}}>SESSION {sn}/{cfg.sessions} · HAND #{hn}</div><div style={{fontSize:18,fontWeight:800,color:G}}>{PL[phase]||phase}</div></div>
+      <Btn sm bg="rgba(255,255,255,0.12)" onClick={()=>setShowSt(s=>!s)}>Stacks</Btn>
+    </div>
+    <div style={{background:"rgba(240,192,64,0.12)",border:"1px solid rgba(240,192,64,0.35)",borderRadius:12,padding:"10px 14px",marginBottom:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:13,color:DIM}}>TOTAL POT</span><span style={{fontSize:24,fontWeight:800,color:G}}>{pot}</span></div>
+      {ai.length>0&&cp.length>1&&<div style={{display:"flex",gap:5,marginTop:5,flexWrap:"wrap"}}>{cp.map((p,i)=><span key={i} style={{fontSize:11,background:i===0?"rgba(240,192,64,0.2)":"rgba(160,100,240,0.2)",borderRadius:6,padding:"2px 7px",color:i===0?G:"#c8a0ff"}}>{p.label}: {p.amount}</span>)}</div>}
+    </div>
+    {showSt&&<Card>{sortedSt.map((p,i)=><div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span style={{color:p.folded?DIM:"#fff"}}>{MED[i]} {p.name}{ai.includes(p.id)?" [AI]":""}</span><span style={{color:G,fontWeight:700}}>{p.stack} <span style={{color:DIM,fontWeight:400,fontSize:11}}>{scores[p.id]||0}pt</span></span></div>)}</Card>}
+    <Card>{players.map((p,i)=>{const isAct=i===actI&&isBet,isAI=ai.includes(p.id);return(<div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",borderRadius:10,marginBottom:4,background:p.folded?"rgba(255,255,255,0.02)":isAct?"rgba(240,192,64,0.13)":"rgba(255,255,255,0.05)",border:isAct?"1px solid rgba(240,192,64,0.5)":"1px solid transparent",opacity:p.folded?0.4:1}}>
+      <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+        <span style={{fontWeight:700,fontSize:14}}>{p.name}</span>
+        {i===dealer&&<span style={{fontSize:10,background:"#555",borderRadius:4,padding:"1px 4px",fontWeight:700}}>D</span>}
+        {i===sbI&&<span style={{fontSize:10,background:"#3a7fd4",borderRadius:4,padding:"1px 4px",fontWeight:700}}>SB</span>}
+        {i===bbI&&<span style={{fontSize:10,background:"#c03",borderRadius:4,padding:"1px 4px",fontWeight:700}}>BB</span>}
+        {isAI&&<span style={{fontSize:10,background:"#7a1a7a",borderRadius:4,padding:"1px 4px",fontWeight:700}}>AI</span>}
+        {p.folded&&<span style={{fontSize:11,color:"#f55"}}>OUT</span>}
+        {isAct&&<span style={{fontSize:11,color:G}}>▶</span>}
+      </div>
+      <div style={{textAlign:"right"}}><div style={{color:G,fontWeight:800,fontSize:15}}>{p.stack}</div><div style={{color:DIM,fontSize:11}}>{scores[p.id]||0}pt</div></div>
+    </div>);})}</Card>
+
+    {phase==="preflop_start"&&<Card sx={{textAlign:"center"}}><div style={{fontSize:34,marginBottom:8}}>🃏</div><p style={{color:G,fontWeight:800,fontSize:17,margin:"0 0 4px"}}>PRE-FLOP ROUND STARTS</p><p style={{color:DIM,fontSize:13,margin:"0 0 12px"}}>Look at your hole cards!</p><div style={{background:"rgba(255,255,255,0.06)",borderRadius:10,padding:12,marginBottom:14,textAlign:"left"}}><div style={{fontSize:12,color:DIM,marginBottom:5}}>POSITIONS</div><div>Dealer: <b>{players[dealer]&&players[dealer].name}</b></div><div>SB ({cfg.sb}): <b>{players[sbI]&&players[sbI].name}</b></div><div>BB ({cfg.bb}): <b>{players[bbI]&&players[bbI].name}</b></div></div><Btn full onClick={()=>setPhase("preflop")}>Proceed to Betting</Btn></Card>}
+
+    {rvli&&<Card sx={{textAlign:"center"}}><div style={{marginBottom:8}}><Btn full bg="rgba(255,255,255,0.09)" onClick={goBack}>← Go Back</Btn></div><div style={{fontSize:30,marginBottom:8}}>{rvli.i}</div><p style={{color:G,fontWeight:800,fontSize:18,margin:"0 0 5px"}}>{rvli.t}</p><p style={{color:DIM,fontSize:13,margin:"0 0 14px"}}>{rvli.s}</p><Btn full onClick={proceedReveal}>Reveal &amp; Start Betting</Btn></Card>}
+
+    {isBet&&actP&&<Card>
+      <div style={{marginBottom:8}}><Btn full bg="rgba(255,255,255,0.09)" onClick={goBack}>← Go Back</Btn></div>
+      <p style={{color:G,fontWeight:700,marginTop:0,marginBottom:10}}>{actP.name}'s Turn {toCall>0&&<span style={{color:DIM,fontWeight:400,fontSize:13}}> · To call: {toCall}</span>}</p>
+      {!rm?<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {toCall===0?<Btn bg="#2a7a4b" onClick={doCheck}>Check</Btn>:<Btn bg="#2a7a4b" onClick={doCall}>Call {toCall}</Btn>}
+        <Btn bg="#b8880e" onClick={()=>setRm(true)}>{ba}</Btn>
+        <Btn bg="#8b1a1a" onClick={doFold}>Fold</Btn>
+      </div>:<div>
+        <div style={{color:DIM,fontSize:13,marginBottom:4}}>{ba} amount (min: {lr})</div>
+        <input type="number" value={ra} onChange={e=>setRa(e.target.value)} placeholder={"Min "+lr} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:9,color:"#fff",padding:"10px 13px",fontSize:15,outline:"none",width:"100%",boxSizing:"border-box",marginBottom:8}}/>
+        <div style={{display:"flex",gap:6,marginBottom:8}}>
+          {!mc?<Btn sm bg="#1a5c30" onClick={()=>{setRa(String(lr));setMc(true);}}>+{lr} (Min)</Btn>:<><Btn sm bg="#1a5c30" onClick={()=>setRa(String(Number(ra||0)+Math.floor(cfg.bb/2)))}>+{Math.floor(cfg.bb/2)}</Btn><Btn sm bg="#1a5c30" onClick={()=>setRa(String(Number(ra||0)+cfg.bb))}>+{cfg.bb}</Btn></>}
+          <Btn sm bg="#7a1a7a" onClick={doAllIn}>All In ({actP.stack})</Btn>
+        </div>
+        <div style={{display:"flex",gap:8}}><Btn bg="#b8880e" onClick={doRaise}>Confirm {ba}</Btn><Btn bg="#444" onClick={()=>{setRm(false);setRa("");setMc(false);}}>Cancel</Btn></div>
+      </div>}
+    </Card>}
+
+    {phase==="showdown"&&cpd&&<Card>
+      <div style={{marginBottom:8}}><Btn full bg="rgba(255,255,255,0.09)" onClick={goBack}>← Go Back</Btn></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><p style={{color:G,fontWeight:700,margin:0}}>SHOWDOWN</p>{cp.length>1&&<span style={{fontSize:12,color:DIM}}>Pot {pi+1}/{cp.length}</span>}</div>
+      {cp.length>1&&<div style={{display:"flex",gap:5,marginBottom:8,flexWrap:"wrap"}}>{cp.map((p,i)=><span key={i} style={{fontSize:11,borderRadius:6,padding:"2px 7px",fontWeight:700,background:i===pi?(i===0?"rgba(240,192,64,0.25)":"rgba(160,100,240,0.25)"):"rgba(255,255,255,0.06)",color:i===pi?(i===0?G:"#c8a0ff"):DIM}}>{p.label}: {p.amount}</span>)}</div>}
+      <p style={{color:DIM,fontSize:13,marginBottom:10}}>Award <b style={{color:pi===0?G:"#c8a0ff"}}>{cpd.label} ({cpd.amount})</b></p>
+      <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:8}}>
+        {cpd.eligible.map(p=>{const isAI=ai.includes(p.id);return(<button key={p.id} onClick={()=>setCdlg({type:"winner",id:p.id,name:p.name,label:cpd.label,amt:cpd.amount})} style={{background:isAI?"rgba(122,26,122,0.15)":"rgba(240,192,64,0.1)",border:isAI?"1px solid rgba(160,100,240,0.4)":"1px solid rgba(240,192,64,0.4)",borderRadius:12,color:"#fff",padding:"12px 15px",fontSize:14,fontWeight:700,cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between"}}><span>{p.name}{isAI&&<span style={{fontSize:11,color:"#c8a0ff",marginLeft:5}}>[AI]</span>}</span><span style={{color:isAI?"#c8a0ff":G}}>{p.stack}</span></button>);})}
+      </div>
+      {cpd.eligible.length>1&&<div style={{display:"flex",flexDirection:"column",gap:6}}>
+        <Btn full bg="rgba(80,140,255,0.15)" onClick={()=>setCdlg({type:"split",eligible:cpd.eligible,amt:cpd.amount,label:cpd.label,names:cpd.eligible.map(e=>e.name).join(" & ")})}>🤝 Split Between All Remaining</Btn>
+        <Btn full bg="rgba(80,140,255,0.08)" onClick={()=>{setSsel([]);setSseld({eligible:cpd.eligible,amt:cpd.amount,label:cpd.label});}}>✂️ Split Between Selected Players</Btn>
+      </div>}
+    </Card>}
+
+    {phase==="end"&&wi&&<Card sx={{textAlign:"center"}}>
+      <div style={{fontSize:38,marginBottom:6}}>🏆</div>
+      <p style={{color:G,fontWeight:800,fontSize:19,margin:"0 0 4px"}}>{wi.name} wins!</p>
+      <p style={{color:DIM,margin:"0 0 12px"}}>+{wi.amt} chips</p>
+      <Card>{sortedSt.map((p,i)=><div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span>{MED[i]} {p.name}</span><span style={{color:G,fontWeight:700}}>{p.stack}</span></div>)}</Card>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Btn full onClick={()=>startHand(players,(dealer+1)%n,cfg,hn+1,sn)}>Next Hand</Btn>
+        {sn<cfg.sessions&&<Btn full bg="#444" onClick={nextSession}>Next Session</Btn>}
+        {sn>=cfg.sessions&&<Btn full bg="#7a1a1a" onClick={()=>setGameOver(true)}>End Game</Btn>}
+      </div>
+    </Card>}
+
+    <Card><p style={{color:G,fontWeight:700,marginTop:0,marginBottom:6,fontSize:13}}>Action Log</p><div style={{maxHeight:90,overflowY:"auto",fontSize:12,color:DIM}}>{log.map((l,i)=><div key={i} style={{padding:"2px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>{l}</div>)}</div></Card>
+  </div></div>);
+}

@@ -1,0 +1,16 @@
+# Dependencies (huge, never edited)
+node_modules/
+client/node_modules/
+
+# Build artifacts (regenerated from source)
+client/dist/
+
+# Lockfiles (auto-managed)
+package-lock.json
+client/package-lock.json
+
+# Version control internals
+.git/
+
+# Archived legacy code (see Archive/)
+Archive/
