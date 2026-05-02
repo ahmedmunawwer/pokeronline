@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>GameTable Mockup — Poker Online</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: radial-gradient(circle at center, #3e2723 0%, #1a0f0a 100%);
+    color: #fff;
+    min-height: 100vh;
+  }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 4px; margin: 4px; }
+  ::-webkit-scrollbar-thumb { background: rgba(240,192,64,0.4); border-radius: 4px; }
+
+  .G  { color: #f0c040; }
+  .SV { color: #aab4be; }
+  .BR { color: #cd7f32; }
+  .DIM{ color: rgba(255,255,255,0.4); }
+
+  .wrapper { max-width: 460px; margin: 0 auto; padding: 6px 14px 14px; }
+
+  /* ── Poker Table Felt ── */
+  .table-felt {
+    background:
+      radial-gradient(circle, #198754 0%, #0a3622 80%) padding-box,
+      repeating-linear-gradient(173deg, rgba(255,220,140,0.07) 0px, rgba(255,220,140,0.07) 1px, transparent 1px, transparent 6px) border-box,
+      linear-gradient(175deg, #6b4423 0%, #8b5a2b 50%, #5d3a1f 100%) border-box;
+    border: 8px solid transparent;
+    border-radius: 120px;
+    box-shadow:
+      inset 0 0 30px rgba(0,0,0,0.8),
+      inset 4px 4px 8px rgba(255,210,130,0.12),
+      inset -3px -3px 6px rgba(0,0,0,0.5),
+      0 10px 30px rgba(0,0,0,0.9),
+      0 1px 0 rgba(255,200,100,0.08);
+    position: relative;
+    isolation: isolate;
+    width: 100%;
+    aspect-ratio: 1/1.1;
+    margin: 6px 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+
+  /* ── Playing Cards ── */
+  .comm-card { width: 36px; height: 52px; perspective: 1000px; }
+  .hole-card  { width: 22px; height: 32px; margin: 0 2px; perspective: 1000px; }
+  .card-inner {
+    width: 100%; height: 100%;
+    transform-style: preserve-3d;
+    position: relative;
+  }
+  .card-inner.flipped { transform: rotateY(180deg); }
+  .card-front, .card-back {
+    position: absolute; width: 100%; height: 100%;
+    backface-visibility: hidden;
+    border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);
+  }
+  .card-back {
+    background: repeating-linear-gradient(45deg, #8b1a1a 0, #8b1a1a 5px, #b22222 5px, #b22222 10px);
+  }
+  .card-front {
+    background: white; color: black;
+    transform: rotateY(180deg);
+    box-shadow: inset 0 0 2px rgba(0,0,0,0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  .hole-card .card-back {
+    background: repeating-linear-gradient(45deg, #0d2518 0, #0d2518 4px, #1a4a30 4px, #1a4a30 8px);
+  }
+
+  /* ── Action Buttons ── */
+  .act-btns { display: flex; height: 52px; width: 100%; border-radius: 0 0 14px 14px; overflow: hidden; margin-bottom: 8px; }
+  .act-btns button { flex: 1; border: none; color: #fff; font-size: 14px; font-weight: 800; cursor: pointer; }
+  .act-btns .call   { background: #1565c0; border-radius: 0 0 0 14px; }
+  .act-btns .raise  { background: #b8880e; }
+  .act-btns .fold   { background: #8b1a1a; border-radius: 0 0 14px 0; }
+
+  .waiting-strip {
+    height: 52px; background: rgba(10,5,2,0.9);
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 0 0 14px 14px; margin-bottom: 8px; font-size: 13px;
+  }
+
+  /* ── Header Buttons ── */
+  .hdr-btn {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; cursor: pointer; padding: 0; border: none;
+  }
+
+  /* ── Player positions ── */
+  .player-cell {
+    position: absolute; transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; align-items: center;
+  }
+
+  .local-pill {
+    width: 100px;
+    background: linear-gradient(180deg, #6b4423 0%, #8b5a2b 45%, #5d3a1f 100%);
+    border-top: 2px solid rgba(190,140,90,0.5);
+    border-left: 2px solid rgba(190,140,90,0.5);
+    border-right: 2px solid rgba(190,140,90,0.5);
+    border-bottom: none;
+    padding: 8px 10px; text-align: center; position: relative;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    /* Concave bottom corners — SVG clipPath below */
+    clip-path: url(#pill-concave);
+    -webkit-clip-path: url(#pill-concave);
+  }
+  .local-pill.active-pill {
+    border-top-color: #f0c040; border-left-color: #f0c040; border-right-color: #f0c040;
+    box-shadow: 0 0 0 3px #f0c040, 0 0 18px rgba(240,192,64,0.4);
+  }
+
+  /* ── Pizza-slice role badges (quarter-circle, tucked into bottom corners) ── */
+  .pizza-badge {
+    position: absolute;
+    bottom: 0;
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 900;
+    line-height: 1;
+  }
+  .pizza-badge.left {
+    left: 0;
+    border-radius: 0 0 0 100%;
+    /* text offset toward center of quarter-circle */
+    padding: 0 8px 6px 0;
+  }
+  .pizza-badge.right {
+    right: 0;
+    border-radius: 0 0 100% 0;
+    padding: 0 0 6px 8px;
+  }
+
+  .remote-strip {
+    background: rgba(12,22,16,0.88);
+    border: 1px solid rgba(93,64,55,0.5);
+    border-radius: 10px;
+    padding: 4px 7px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .remote-strip.active-strip {
+    border-color: #f0c040;
+    box-shadow: 0 0 0 2px #f0c040, 0 0 10px rgba(240,192,64,0.33);
+  }
+
+  .chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── Chip Stack SVG (inline simplified) ── */
+  .chip-stack { width: 14px; }
+
+  /* ── Pot Pill ── */
+  .pot-pill {
+    width: 110px;
+    border-radius: 14px;
+    padding: 6px 10px;
+    text-align: center;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+
+  /* ── Badges ── */
+  .badge {
+    position: absolute; left: -10px; bottom: -10px;
+    width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 900;
+    border: 2px solid #1a0f0a;
+  }
+  .badge-r {
+    left: auto; right: -10px;
+  }
+
+  /* ── Card / info panels ── */
+  .info-card {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px; padding: 16px; margin-bottom: 12px;
+  }
+
+  /* ── Fold overlay ── */
+  .fold-stamp {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%) rotate(-15deg);
+    background: rgba(200,50,50,0.9);
+    color: #fff; font-size: 10px; font-weight: 900;
+    padding: 2px 10px; border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.3);
+    pointer-events: none;
+  }
+
+  .act-tag {
+    position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%);
+    background: #f0c040; color: #000; font-size: 9px; font-weight: 900;
+    padding: 2px 8px; border-radius: 8px; text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<!-- SVG clipPath for concave pill corners -->
+<svg width="0" height="0" style="position:absolute;pointer-events:none;">
+  <defs>
+    <clipPath id="pill-concave" clipPathUnits="objectBoundingBox">
+      <path d="M0.14,0 L0.86,0 C0.95,0 1,0.04 1,0.14 L1,0.86 C0.96,0.92 0.92,0.96 0.86,1 L0.14,1 C0.08,0.96 0.04,0.92 0,0.86 L0,0.14 C0,0.04 0.04,0 0.14,0 Z"/>
+    </clipPath>
+  </defs>
+</svg>
+
+<div class="wrapper">
+
+  <!-- ========== STATUS HEADER ========== -->
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <div>
+      <div style="font-size:11px;" class="DIM">SESSION 1/3 · HAND #4</div>
+      <div style="font-size:18px; font-weight:800;" class="G">PRE-FLOP</div>
+    </div>
+    <div style="display:flex; gap:6px; align-items:center;">
+      <button class="hdr-btn" style="background:rgba(255,100,100,0.1); border:1px solid rgba(255,100,100,0.3);">🏠</button>
+      <button class="hdr-btn" style="background:rgba(240,192,64,0.12); border:1px solid rgba(240,192,64,0.35);">🃏</button>
+      <button class="hdr-btn" style="background:rgba(240,192,64,0.2); border:1px solid rgba(240,192,64,0.4);">📊</button>
+      <button style="background:rgba(255,255,255,0.12); border:none; border-radius:10px; color:#fff; padding:7px 10px; font-size:12px; font-weight:700; cursor:pointer;">Stacks</button>
+    </div>
+  </div>
+
+  <!-- ========== POKER TABLE FELT ========== -->
+  <div class="table-felt">
+
+    <!-- Community Cards -->
+    <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:6px; z-index:25; align-items:center; min-height:52px;">
+      <!-- Turn + River (top row) -->
+      <div style="display:flex; gap:6px; justify-content:center;">
+        <div class="comm-card" style="transform:scale(0.7); transform-origin:bottom center;">
+          <div class="card-inner flipped">
+            <div class="card-back"></div>
+            <div class="card-front">
+              <div style="position:relative; width:100%; height:100%;">
+                <div style="position:absolute; top:2px; left:3px; font-size:9px; font-weight:800; color:#111; line-height:1.1; text-align:center;">K<div>♣</div></div>
+                <span style="font-size:20px; color:#111;">♣</span>
+                <div style="position:absolute; bottom:2px; right:3px; font-size:9px; font-weight:800; color:#111; line-height:1.1; text-align:center; transform:rotate(180deg);">K<div>♣</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="comm-card" style="transform-origin:bottom center;">
+          <div class="card-inner flipped">
+            <div class="card-back"></div>
+            <div class="card-front">
+              <div style="position:relative; width:100%; height:100%;">
+                <div style="position:absolute; top:2px; left:3px; font-size:9px; font-weight:800; color:#d32f2f; line-height:1.1; text-align:center;">A<div>♦</div></div>
+                <span style="font-size:20px; color:#d32f2f;">♦</span>
+                <div style="position:absolute; bottom:2px; right:3px; font-size:9px; font-weight:800; color:#d32f2f; line-height:1.1; text-align:center; transform:rotate(180deg);">A<div>♦</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Flop (bottom row) -->
+      <div style="display:flex; gap:6px; justify-content:center;">
+        <div class="comm-card" style="transform:scale(0.7); transform-origin:bottom center;">
+          <div class="card-inner flipped">
+            <div class="card-back"></div>
+            <div class="card-front">
+              <div style="position:relative; width:100%; height:100%;">
+                <div style="position:absolute; top:2px; left:3px; font-size:9px; font-weight:800; color:#d32f2f; line-height:1.1; text-align:center;">J<div>♥</div></div>
+                <span style="font-size:20px; color:#d32f2f;">♥</span>
+                <div style="position:absolute; bottom:2px; right:3px; font-size:9px; font-weight:800; color:#d32f2f; line-height:1.1; text-align:center; transform:rotate(180deg);">J<div>♥</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="comm-card" style="transform:scale(0.7); transform-origin:bottom center;">
+          <div class="card-inner flipped">
+            <div class="card-back"></div>
+            <div class="card-front">
+              <div style="position:relative; width:100%; height:100%;">
+                <div style="position:absolute; top:2px; left:3px; font-size:9px; font-weight:800; color:#d32f2f; line-height:1.1; text-align:center;">8<div>♥</div></div>
+                <span style="font-size:20px; color:#d32f2f;">♥</span>
+                <div style="position:absolute; bottom:2px; right:3px; font-size:9px; font-weight:800; color:#d32f2f; line-height:1.1; text-align:center; transform:rotate(180deg);">8<div>♥</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="comm-card" style="transform:scale(0.7); transform-origin:bottom center;">
+          <div class="card-inner flipped">
+            <div class="card-back"></div>
+            <div class="card-front">
+              <div style="position:relative; width:100%; height:100%;">
+                <div style="position:absolute; top:2px; left:3px; font-size:9px; font-weight:800; color:#d32f2f; line-height:1.1; text-align:center;">3<div>♥</div></div>
+                <span style="font-size:20px; color:#d32f2f;">♥</span>
+                <div style="position:absolute; bottom:2px; right:3px; font-size:9px; font-weight:800; color:#d32f2f; line-height:1.1; text-align:center; transform:rotate(180deg);">3<div>♥</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Pot -->
+    <div style="z-index:25; display:flex; flex-direction:column; align-items:center;">
+      <div class="pot-pill" style="background:rgba(240,192,64,0.18); border:1px solid rgba(240,192,64,0.5);">
+        <div style="font-size:9px; color:rgba(255,255,255,0.5); text-transform:uppercase; letter-spacing:1px; font-weight:700; margin-bottom:1px;">Main</div>
+        <div style="font-size:13px; font-weight:800; color:#f0c040; line-height:1.2;">420</div>
+        <div style="display:flex; gap:3px; justify-content:center; margin-top:3px; flex-wrap:wrap;">
+          <div style="width:5px; height:5px; border-radius:50%; background:#ff595e;"></div>
+          <div style="width:5px; height:5px; border-radius:50%; background:#ffca3a;"></div>
+          <div style="width:5px; height:5px; border-radius:50%; background:#8ac926;"></div>
+          <div style="width:5px; height:5px; border-radius:50%; background:#1982c4;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PLAYERS (4 seats) ===== -->
+
+    <!-- Remote: Left (Player 2) -->
+    <div class="player-cell" style="left:14%; top:48%; z-index:10;">
+      <div style="display:flex; flex-direction:column; align-items:center; transform:scale(0.77);">
+        <!-- Hole cards -->
+        <div style="display:flex; margin-bottom:-6px; margin-top:-14px; z-index:2; position:relative; transform:scale(0.55); transform-origin:center bottom;">
+          <div class="hole-card"><div class="card-inner"><div class="card-back"></div><div class="card-front"><span style="color:#d32f2f;">♥</span></div></div></div>
+          <div class="hole-card"><div class="card-inner"><div class="card-back"></div><div class="card-front"><span style="color:#111;">♠</span></div></div></div>
+        </div>
+        <!-- Bet chips pushed toward center -->
+        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0; pointer-events:none; z-index:1;"></div>
+        <!-- Player strip -->
+        <div class="remote-strip">
+          <div class="chip-dot" style="background:#ffca3a;"></div>
+          <div style="font-size:10px; font-weight:700; color:#fff;">Sarah</div>
+        </div>
+      </div>
+      <!-- Chip stack -->
+      <div style="position:absolute; right:100%; bottom:20px; width:14px; margin-right:6px;">
+        <svg width="100%" height="35" viewBox="0 0 40 35" style="filter:drop-shadow(0 4px 5px rgba(0,0,0,0.6));">
+          <g transform="translate(0,5)"><ellipse cx="20" cy="10" rx="18" ry="7" fill="#d32f2f" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+          <g transform="translate(0,10)"><path d="M 2 10 A 18 7 0 0 0 38 10 L 38 15 A 18 7 0 0 1 2 15 Z" fill="#d32f2f" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="18" ry="7" fill="#d32f2f" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+          <g transform="translate(0,15)"><path d="M 2 10 A 18 7 0 0 0 38 10 L 38 15 A 18 7 0 0 1 2 15 Z" fill="#1976d2" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="18" ry="7" fill="#1976d2" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Remote: Top (Player 3) — Active! -->
+    <div class="player-cell" style="left:50%; top:10%; z-index:30;">
+      <div style="display:flex; flex-direction:column; align-items:center; transform:scale(1.3);">
+        <!-- Hole cards -->
+        <div style="display:flex; margin-bottom:-6px; margin-top:-14px; z-index:2; position:relative; transform:scale(0.55); transform-origin:center bottom;">
+          <div class="hole-card"><div class="card-inner flipped"><div class="card-back"></div><div class="card-front"><span style="color:#d32f2f;">♥</span></div></div></div>
+          <div class="hole-card"><div class="card-inner flipped"><div class="card-back"></div><div class="card-front"><span style="color:#d32f2f;">♦</span></div></div></div>
+        </div>
+        <!-- Bet chips pushed toward center -->
+        <div style="position:absolute; top:50%; left:50%; transform:translate(calc(-50% + 0px), calc(-50% + 30px)); opacity:1; pointer-events:none; z-index:1; display:flex; flex-direction:column; align-items:center; transition:transform 0.4s ease, opacity 0.3s;">
+          <div style="width:16px;">
+            <svg width="100%" height="25" viewBox="0 0 40 25" style="filter:drop-shadow(0 4px 5px rgba(0,0,0,0.6));">
+              <g transform="translate(0,5)"><ellipse cx="20" cy="10" rx="18" ry="7" fill="#388e3c" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+              <g transform="translate(0,10)"><path d="M 2 10 A 18 7 0 0 0 38 10 L 38 15 A 18 7 0 0 1 2 15 Z" fill="#388e3c" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="18" ry="7" fill="#388e3c" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+            </svg>
+          </div>
+          <div style="font-size:9px; font-weight:800; color:#fff; background:rgba(0,0,0,0.6); padding:1px 4px; border-radius:10px; margin-top:2px; border:1px solid #f0c040;">20</div>
+        </div>
+        <!-- Player strip (active) -->
+        <div class="remote-strip active-strip" style="position:relative;">
+          <div class="chip-dot" style="background:#8ac926;"></div>
+          <div style="font-size:10px; font-weight:700; color:#fff;">Mike</div>
+          <div class="badge badge-r" style="background:#fff; color:#000;">D</div>
+          <div class="act-tag" style="white-space:nowrap;">Acting...</div>
+        </div>
+      </div>
+      <!-- Chip stack -->
+      <div style="position:absolute; right:100%; bottom:20px; width:14px; margin-right:6px;">
+        <svg width="100%" height="35" viewBox="0 0 40 35" style="filter:drop-shadow(0 4px 5px rgba(0,0,0,0.6));">
+          <g transform="translate(0,5)"><ellipse cx="20" cy="10" rx="18" ry="7" fill="#8ac926" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+          <g transform="translate(0,10)"><path d="M 2 10 A 18 7 0 0 0 38 10 L 38 15 A 18 7 0 0 1 2 15 Z" fill="#8ac926" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="18" ry="7" fill="#8ac926" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+          <g transform="translate(0,15)"><path d="M 2 10 A 18 7 0 0 0 38 10 L 38 15 A 18 7 0 0 1 2 15 Z" fill="#fbc02d" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="18" ry="7" fill="#fbc02d" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Remote: Right (Player 4) — Folded -->
+    <div class="player-cell" style="left:86%; top:48%; z-index:10;">
+      <div style="display:flex; flex-direction:column; align-items:center; transform:scale(0.77); opacity:0.4;">
+        <!-- Hole cards (folded = still show? In current code, folded players show cards. Let's keep them face-down.) -->
+        <div style="display:flex; margin-bottom:-6px; margin-top:-14px; z-index:2; position:relative; transform:scale(0.55); transform-origin:center bottom;">
+          <div class="hole-card"><div class="card-inner"><div class="card-back"></div><div class="card-front"><span style="color:#111;">♣</span></div></div></div>
+          <div class="hole-card"><div class="card-inner"><div class="card-back"></div><div class="card-front"><span style="color:#111;">♠</span></div></div></div>
+        </div>
+        <div class="remote-strip" style="position:relative; background:rgba(0,0,0,0.5); border-color:rgba(255,255,255,0.08);">
+          <div class="chip-dot" style="background:#999;"></div>
+          <div style="font-size:10px; font-weight:700; color:rgba(255,255,255,0.45); text-decoration:line-through;">Tom</div>
+          <div style="font-size:8px; font-weight:900; color:#42a5f5; line-height:1;">SB</div>
+        </div>
+        <div class="fold-stamp">FOLDED</div>
+      </div>
+    </div>
+
+    <!-- Local Player: Bottom-Center (YOU) -->
+    <div class="player-cell" style="left:50%; top:92%; z-index:20;">
+      <div style="display:flex; flex-direction:column; align-items:center; position:relative;">
+        <!-- Hole cards -->
+        <div style="display:flex; margin-bottom:-6px; margin-top:-14px; z-index:2; position:relative; transform:scale(0.55); transform-origin:center bottom;">
+          <div class="hole-card"><div class="card-inner flipped"><div class="card-back"></div><div class="card-front"><span style="color:#d32f2f;">♥</span></div></div></div>
+          <div class="hole-card"><div class="card-inner flipped"><div class="card-back"></div><div class="card-front"><span style="color:#111;">♣</span></div></div></div>
+        </div>
+        <!-- Pill + badges in tight relative wrapper -->
+        <div style="position:relative; display:inline-block;">
+          <div class="local-pill">
+            <!-- Bet chips above pill -->
+            <div style="position:absolute; bottom:calc(100% + 4px); left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; pointer-events:none; z-index:2;">
+              <div style="width:16px;">
+                <svg width="100%" height="25" viewBox="0 0 40 25" style="filter:drop-shadow(0 4px 5px rgba(0,0,0,0.6));">
+                  <g transform="translate(0,5)"><ellipse cx="20" cy="10" rx="18" ry="7" fill="#1976d2" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+                  <g transform="translate(0,10)"><path d="M 2 10 A 18 7 0 0 0 38 10 L 38 15 A 18 7 0 0 1 2 15 Z" fill="#1976d2" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="18" ry="7" fill="#1976d2" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+                </svg>
+              </div>
+              <div style="font-size:9px; font-weight:800; color:#fff; background:rgba(0,0,0,0.6); padding:1px 4px; border-radius:10px; margin-top:2px; border:1px solid #f0c040;">10</div>
+            </div>
+            <!-- Name + dot -->
+            <div style="display:flex; align-items:center; justify-content:center; gap:5px; margin-bottom:2px;">
+              <div class="chip-dot" style="background:#ff595e; width:8px; height:8px;"></div>
+              <div style="font-size:13px; font-weight:800; color:#fff;">You (Ahmed)</div>
+            </div>
+            <!-- Stack -->
+            <div style="font-size:16px; font-weight:900;" class="G">1,240</div>
+          </div>
+          <!-- Pizza-slice badge: sits at bottom-left corner of pill wrapper -->
+          <div class="pizza-badge left" style="background:#ef5350; color:#fff;">BB</div>
+          <!-- Uncomment below for dealer example:
+          <div class="pizza-badge right" style="background:#fff; color:#000;">D</div>
+          -->
+        </div>
+      </div>
+      <!-- Personal chip stack -->
+      <div style="position:absolute; right:100%; bottom:20px; width:14px; margin-right:6px;">
+        <svg width="100%" height="45" viewBox="0 0 40 45" style="filter:drop-shadow(0 4px 5px rgba(0,0,0,0.6));">
+          <g transform="translate(0,0)"><ellipse cx="20" cy="10" rx="18" ry="7" fill="#ff595e" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+          <g transform="translate(0,5)"><path d="M 2 10 A 18 7 0 0 0 38 10 L 38 15 A 18 7 0 0 1 2 15 Z" fill="#ff595e" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="18" ry="7" fill="#ff595e" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+          <g transform="translate(0,10)"><path d="M 2 10 A 18 7 0 0 0 38 10 L 38 15 A 18 7 0 0 1 2 15 Z" fill="#1976d2" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="18" ry="7" fill="#1976d2" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+          <g transform="translate(0,15)"><path d="M 2 10 A 18 7 0 0 0 38 10 L 38 15 A 18 7 0 0 1 2 15 Z" fill="#388e3c" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="18" ry="7" fill="#388e3c" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+          <g transform="translate(0,20)"><path d="M 2 10 A 18 7 0 0 0 38 10 L 38 15 A 18 7 0 0 1 2 15 Z" fill="#fbc02d" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="18" ry="7" fill="#fbc02d" stroke="#000" stroke-width="1"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4,2"/></g>
+        </svg>
+      </div>
+    </div>
+
+  </div><!-- end table-felt -->
+
+  <!-- ========== ACTION BUTTONS (Your turn) ========== -->
+  <div class="act-btns">
+    <button class="call">Call 20</button>
+    <button class="raise">Raise</button>
+    <button class="fold">Fold</button>
+  </div>
+
+  <!-- ========== ACTION LOG ========== -->
+  <div class="info-card">
+    <p style="color:#f0c040; font-weight:700; margin-top:0; margin-bottom:6px; font-size:11px;">Action Log</p>
+    <div style="max-height:60px; overflow-y:auto; font-size:12px;" class="DIM">
+      <div style="padding:2px 0; border-bottom:1px solid rgba(255,255,255,0.04);">Sarah posted SB (10)</div>
+      <div style="padding:2px 0; border-bottom:1px solid rgba(255,255,255,0.04);">You (Ahmed) posted BB (20)</div>
+      <div style="padding:2px 0; border-bottom:1px solid rgba(255,255,255,0.04);">Tom folded</div>
+      <div style="padding:2px 0; border-bottom:1px solid rgba(255,255,255,0.04);">Mike called 20</div>
+      <div style="padding:2px 0;">Sarah raised 20 → 60</div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

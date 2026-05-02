@@ -1,0 +1,77 @@
+{
+  "savedAt": "2026-05-02T20:12:28.120Z",
+  "playerNames": [
+    "Host",
+    "Joiner"
+  ],
+  "playerCount": 2,
+  "gameState": {
+    "phase": "preflop_start",
+    "players": [
+      {
+        "id": "RpkA4F9YY7weDm1kAAAM",
+        "name": "Host",
+        "stack": 98,
+        "folded": false
+      },
+      {
+        "id": "0uDBA-PhnrLLmvu_AAAN",
+        "name": "Joiner",
+        "stack": 99,
+        "folded": false
+      }
+    ],
+    "cfg": {
+      "sessions": 1,
+      "sb": 1,
+      "bb": 2
+    },
+    "pot": 3,
+    "cp": [],
+    "dealer": 1,
+    "actI": 0,
+    "queue": [],
+    "hc": {
+      "0uDBA-PhnrLLmvu_AAAN": 1,
+      "RpkA4F9YY7weDm1kAAAM": 2
+    },
+    "ai": [],
+    "rBets": {
+      "0": 2,
+      "1": 1
+    },
+    "curBet": 2,
+    "lr": 2,
+    "lfb": 2,
+    "scores": {
+      "RpkA4F9YY7weDm1kAAAM": 0,
+      "0uDBA-PhnrLLmvu_AAAN": 0
+    },
+    "history": [],
+    "undoStack": [],
+    "pi": 0,
+    "hn": 1,
+    "sn": 1,
+    "log": [
+      "BB: Host (2)",
+      "SB: Joiner (1)",
+      "Dealer: Joiner",
+      "─ Hand #1 | Sess 1/1 ─"
+    ],
+    "curActs": [],
+    "origSt": {
+      "RpkA4F9YY7weDm1kAAAM": 100,
+      "0uDBA-PhnrLLmvu_AAAN": 100
+    },
+    "stacksBefore": {
+      "RpkA4F9YY7weDm1kAAAM": 100,
+      "0uDBA-PhnrLLmvu_AAAN": 100
+    },
+    "sbI": 1,
+    "bbI": 0,
+    "wi": null,
+    "ba": "Raise"
+  },
+  "handNumber": 1,
+  "sessionNumber": 1
+}

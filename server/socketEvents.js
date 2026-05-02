@@ -61,7 +61,9 @@ module.exports = function(io) {
                 
                 roomManager.joinRoom(roomCode, socket.id, data.name, true, data.maxPlayers, data.equalStack);
                 
-                callback({ success: true, roomCode });
+                const room = roomManager.getRoom(roomCode);
+                const player = room.players.find(p => p.id === socket.id);
+                callback({ success: true, roomCode, playerId: player ? player.pId : null });
                 io.to(roomCode).emit('lobby_update', roomManager.getRoom(roomCode));
             } catch (error) {
                 callback({ success: false, message: error.message || "Server Error" });
@@ -82,7 +84,8 @@ module.exports = function(io) {
                 
                 roomManager.joinRoom(roomCode, socket.id, data.name, false);
                 
-                callback({ success: true });
+                const player = room.players.find(p => p.id === socket.id);
+                callback({ success: true, playerId: player ? player.pId : null });
                 io.to(roomCode).emit('lobby_update', roomManager.getRoom(roomCode));
             } catch (error) {
                 // If join failed, leave the socket room
@@ -226,6 +229,22 @@ module.exports = function(io) {
             }
 
             io.to(socket.currentRoom).emit('game_state_update', gs);
+            // Auto-save after every action
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                const autoSavePath = path.join(__dirname, '..', 'saves', `auto_${socket.currentRoom}.json`);
+                const stateCopy = JSON.parse(JSON.stringify(gs));
+                delete stateCopy.confirmations;
+                fs.writeFileSync(autoSavePath, JSON.stringify({
+                    savedAt: new Date().toISOString(),
+                    playerNames: room.players.map(p => p.name),
+                    playerCount: room.players.length,
+                    gameState: stateCopy,
+                    handNumber: gs.hn,
+                    sessionNumber: gs.sn
+                }, null, 2));
+            } catch (_) { /* silently ignore save errors */ }
         });
 
         socket.on('confirm_result', () => {
@@ -369,7 +388,9 @@ module.exports = function(io) {
                 socket.join(roomCode);
                 socket.currentRoom = roomCode;
 
-                callback({ success: true, roomCode });
+                const room = roomManager.getRoom(roomCode);
+                const player = room.players.find(p => p.id === socket.id);
+                callback({ success: true, roomCode, playerId: player ? player.pId : null });
                 io.to(roomCode).emit('lobby_update', roomManager.getRoom(roomCode));
             } catch (e) {
                 callback({ success: false, message: e.message });
@@ -495,31 +516,77 @@ module.exports = function(io) {
         });
 
         socket.on('disconnect', () => {
-            if (socket.currentRoom) {
-                const room = roomManager.getRoom(socket.currentRoom);
-                if (room && room.setupPhase === 'in_game') {
-                    // Fold if it's their turn
-                    const gs = room.gameState;
-                    const actI = gs.queue && gs.queue[0];
-                    if (actI !== undefined && gs.players[actI] && gs.players[actI].id === socket.id) {
-                        const { processAction } = require('./gameEngine');
-                        processAction(gs, { action: 'fold', playerId: socket.id });
+            // Silent disconnect — no fold, no inactive marker, no removal.
+            // Player stays "active" in the game. When the tab comes back,
+            // socket.io auto-reconnects and sync_reconnect remaps the ID.
+            // Intentional leaves (leave_room, host_end_game) handle their own cleanup.
+        });
+
+        socket.on('sync_reconnect', (data, callback) => {
+            const room = roomManager.getRoom(data.roomCode);
+            if (!room) return callback({ success: false, reason: 'not_found' });
+
+            // Lookup by playerId first (unambiguous), fall back to name
+            let player = null;
+            if (data.playerId) {
+                player = room.players.find(p => p.pId === data.playerId);
+            }
+            if (!player && data.playerName) {
+                player = room.players.find(p => p.name === data.playerName);
+            }
+            if (!player) return callback({ success: false, reason: 'not_found' });
+
+            const oldId = player.id;
+            const playerId = player.pId; // stable identifier
+
+            // Remap socket ID everywhere in the room
+            player.id = socket.id;
+            if (room.hostId === oldId) room.hostId = socket.id;
+
+            // Remap in game state
+            const gs = room.gameState;
+            if (gs && gs.players) {
+                const gp = gs.players.find(p => p.id === oldId);
+                if (gp) gp.id = socket.id;
+
+                // Remap all per-player maps
+                const remapKey = (obj) => {
+                    if (obj && obj[oldId] !== undefined) { obj[socket.id] = obj[oldId]; delete obj[oldId]; }
+                };
+                remapKey(gs.hc);
+                remapKey(gs.scores);
+                remapKey(gs.origSt);
+                remapKey(gs.rBets);
+
+                // Remap in arrays
+                const remapArr = (arr) => {
+                    if (arr) {
+                        for (let i = 0; i < arr.length; i++) {
+                            if (arr[i] === oldId) arr[i] = socket.id;
+                        }
                     }
-                    const wasDealer = gs.players[gs.dealer] && gs.players[gs.dealer].id === socket.id;
-                    roomManager.markPlayerInactive(socket.currentRoom, socket.id);
-                    const remainingActive = gs.players.filter(p => !p.inactive).length;
-                    if (wasDealer && DEALER_CEREMONY_PHASES.has(gs.phase) && remainingActive >= 2) {
-                        rotateDealerForward(gs);
-                    }
-                    resolveLeaveImpact(gs);
-                    io.to(socket.currentRoom).emit('lobby_update', room);
-                    io.to(socket.currentRoom).emit('game_state_update', gs);
-                } else {
-                    roomManager.removeClientFromRoom(socket.currentRoom, socket.id);
-                    const updatedRoom = roomManager.getRoom(socket.currentRoom);
-                    if (updatedRoom) io.to(socket.currentRoom).emit('lobby_update', updatedRoom);
+                };
+                remapArr(gs.ai);
+                remapArr(gs.confirmations);
+                remapArr(gs.restartApprovals);
+
+                // Remap in history records
+                if (gs.history) {
+                    gs.history.forEach(h => {
+                        if (h.wid === oldId) h.wid = socket.id;
+                        if (h.net && h.net[oldId] !== undefined) { h.net[socket.id] = h.net[oldId]; delete h.net[oldId]; }
+                    });
                 }
             }
+
+            // Re-join the socket room (disconnect auto-leaves)
+            socket.join(data.roomCode);
+            socket.currentRoom = data.roomCode;
+
+            // Sync state back — always send both so client knows where it is
+            socket.emit('lobby_update', room);
+            if (gs) socket.emit('game_state_update', gs);
+            callback({ success: true, playerId, inGame: room.setupPhase === 'in_game' });
         });
     });
 };
