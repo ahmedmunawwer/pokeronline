@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    allowedHosts: ['.ngrok-free.dev', '.ngrok-free.app'],
     proxy: {
       // This forwards all multiplayer data to your backend server
       '/socket.io': {
