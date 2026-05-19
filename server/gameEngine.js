@@ -91,7 +91,7 @@ function buildPots(players, hc, aiIds) {
         const excess = contrib - Math.min(contrib, highestAI);
         remainAmt += excess;
         const player = players.find(p => p.id === id);
-        if (player && !player.folded && contrib >= highestAI) {
+        if (player && !player.folded && contrib > highestAI) {
             remainEligible.push(player);
         }
     }
@@ -461,8 +461,8 @@ function processAction(state, actionObj) {
 }
 
 function checkBankruptcy(state, np, sc) {
-    if (!np.some(p => p.stack === 0)) return false;
-    const sorted = np.slice().sort((a,b) => b.stack - a.stack);
+    if (!np.some(p => p.stack === 0 && !p.inactive)) return false;
+    const sorted = np.filter(p => !p.inactive).slice().sort((a,b) => b.stack - a.stack);
     const pts = calcSPts(sorted);
     const ns = { ...sc };
     sorted.forEach(p => { ns[p.id] = (ns[p.id] || 0) + (pts[p.id] || 0); });

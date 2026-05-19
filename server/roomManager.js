@@ -1,4 +1,7 @@
+const { randomUUID } = require('crypto');
+
 const activeRooms = new Map(); // key: digit (1-9), value: room object
+const gracePeriodTimers = new Map(); // playerId → timer handle
 
 function getAvailableDigit() {
     for (let i = 1; i <= 9; i++) {
@@ -73,7 +76,8 @@ function joinRoom(roomCode, socketId, name, isHost = false, maxPlayers = 6, equa
     if (!room) throw new Error("Room does not exist");
     if (room.setupPhase !== 'waiting') throw new Error("Game already in progress");
     if (room.players.length >= room.maxPlayers && !isHost) throw new Error("Room is full");
-    if (room.players.find(p => p.id === socketId)) return; // Already joined
+    const existing = room.players.find(p => p.id === socketId);
+    if (existing) return existing.playerId;
 
     // Check for duplicate names
     const trimmedName = (name || '').trim();
@@ -87,14 +91,17 @@ function joinRoom(roomCode, socketId, name, isHost = false, maxPlayers = 6, equa
         room.equalStack = equalStack;
     }
 
+    const playerId = randomUUID();
     room.players.push({
         id: socketId,
+        playerId,
         name: trimmedName || `Player ${room.players.length + 1}`,
         ready: isHost,
         stack: 0,
         isHost: isHost
     });
     room.sockets.add(socketId);
+    return playerId;
 }
 
 function createLoadedRoom(saveData) {
@@ -123,7 +130,8 @@ function joinLoadedRoom(roomCode, socketId, name) {
     if (!room) throw new Error("Room does not exist");
     if (!room.isLoaded) throw new Error("This is not a loaded game room");
     if (room.setupPhase !== 'loaded_waiting') throw new Error("Game already resumed");
-    if (room.players.find(p => p.id === socketId)) return;
+    const existing = room.players.find(p => p.id === socketId);
+    if (existing) return existing.playerId;
 
     const trimmedName = (name || '').trim();
 
@@ -139,18 +147,19 @@ function joinLoadedRoom(roomCode, socketId, name) {
     }
 
     const isHost = room.players.length === 0; // First player is host
-    if (isHost) {
-        room.hostId = socketId;
-    }
+    if (isHost) room.hostId = socketId;
 
+    const playerId = randomUUID();
     room.players.push({
         id: socketId,
+        playerId,
         name: nameMatch, // Use exact case from save
         ready: true,
         stack: 0,
         isHost: isHost
     });
     room.sockets.add(socketId);
+    return playerId;
 }
 
 function setPlayerReady(roomCode, socketId, ready) {
@@ -238,6 +247,82 @@ function getRoomCodeSuggestions() {
     return { nextAvailableHostCode, latestJoineeCode };
 }
 
+function markPlayerDisconnected(roomCode, socketId) {
+    const room = activeRooms.get(roomCode);
+    if (!room) return null;
+    const player = room.players.find(p => p.id === socketId);
+    if (!player) return null;
+
+    player.inactive = true;
+    player.disconnected = true;
+    player.disconnectedAt = Date.now();
+
+    if (room.gameState && room.gameState.players) {
+        const gp = room.gameState.players.find(p => p.id === socketId);
+        if (gp) { gp.inactive = true; gp.disconnected = true; }
+    }
+    room.sockets.delete(socketId);
+    return { playerId: player.playerId, playerName: player.name };
+}
+
+function remapPlayerIdInGameState(gs, oldId, newId) {
+    if (!gs) return;
+
+    if (gs.players) {
+        const gp = gs.players.find(p => p.id === oldId);
+        if (gp) { gp.id = newId; gp.inactive = false; gp.disconnected = false; }
+    }
+
+    for (const key of ['origSt', 'scores', 'hc', 'stacksBefore']) {
+        if (gs[key] && oldId in gs[key]) {
+            gs[key][newId] = gs[key][oldId];
+            delete gs[key][oldId];
+        }
+    }
+
+    if (Array.isArray(gs.ai)) {
+        const idx = gs.ai.indexOf(oldId);
+        if (idx !== -1) gs.ai[idx] = newId;
+    }
+
+    gs.confirmations = [];
+    if (gs.restartApprovals) gs.restartApprovals = [];
+}
+
+function rejoinPlayer(roomCode, playerId, newSocketId) {
+    const room = activeRooms.get(roomCode);
+    if (!room) return { ok: false, reason: 'room_gone' };
+
+    const player = room.players.find(p => p.playerId === playerId);
+    if (!player) return { ok: false, reason: 'unknown_player' };
+    if (!player.disconnected) return { ok: false, reason: 'slot_expired' };
+
+    const oldSocketId = player.id;
+    const timeSinceDisconnect = player.disconnectedAt ? Date.now() - player.disconnectedAt : 0;
+
+    player.id = newSocketId;
+    player.inactive = false;
+    player.disconnected = false;
+    player.disconnectedAt = null;
+
+    if (room.hostId === oldSocketId) room.hostId = newSocketId;
+    room.sockets.add(newSocketId);
+
+    remapPlayerIdInGameState(room.gameState, oldSocketId, newSocketId);
+
+    return { ok: true, timeSinceDisconnect, room, player, oldSocketId };
+}
+
+function setGraceTimer(playerId, timer) {
+    gracePeriodTimers.set(playerId, timer);
+}
+
+function cancelGraceTimer(playerId) {
+    const timer = gracePeriodTimers.get(playerId);
+    if (timer) clearTimeout(timer);
+    gracePeriodTimers.delete(playerId);
+}
+
 module.exports = {
     createRoom,
     createLoadedRoom,
@@ -249,5 +334,9 @@ module.exports = {
     deleteRoom,
     addClientToRoom,
     removeClientFromRoom,
-    markPlayerInactive
+    markPlayerInactive,
+    markPlayerDisconnected,
+    rejoinPlayer,
+    setGraceTimer,
+    cancelGraceTimer
 };

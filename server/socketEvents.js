@@ -15,33 +15,29 @@ function rotateDealerForward(gs) {
     }
 }
 
-// When a player leaves/disconnects mid-game, clean up the hand so the
-// remaining player is never stuck waiting for the leaver to act.
+// When a player leaves mid-game, fix the dealer position if needed so the
+// remaining players are never stuck at the "Next Hand" button.
 function resolveLeaveImpact(gs) {
     const midHandPhases = ['preflop_start','preflop','flop','flop_reveal','turn','turn_reveal','river','river_reveal','showdown'];
     const activePlayers = gs.players.filter(p => !p.inactive && p.stack > 0);
 
-    if (activePlayers.length === 1) {
-        const winner = activePlayers[0];
-        // Award any pot that was still on the table
-        if (gs.pot > 0 && midHandPhases.includes(gs.phase)) {
+    if (midHandPhases.includes(gs.phase) || gs.phase === 'end') {
+        if (activePlayers.length === 1 && gs.pot > 0 && midHandPhases.includes(gs.phase)) {
+            const winner = activePlayers[0];
             gs.players = gs.players.map(p =>
                 p.id === winner.id ? { ...p, stack: p.stack + gs.pot } : p
             );
             if (!gs.log) gs.log = [];
-            gs.log.unshift(winner.name + " wins " + gs.pot + " (opponent left)");
+            gs.log.unshift(winner.name + ' wins ' + gs.pot + ' (opponent left)');
             gs.wi = { name: winner.name, amt: gs.pot };
             gs.pot = 0;
         }
         gs.queue = [];
         gs.rBets = {};
-        gs.phase = 'end';
-        if (!gs.wi) gs.wi = { name: winner.name, amt: 0 };
-        // Force the game-over screen: only 1 player left, no point continuing
         if (gs.cfg) gs.sn = gs.cfg.sessions;
+        gs.phase = 'end';
+        gs.gameEndedByLeave = true;
     } else if (gs.phase === 'end' && gs.players[gs.dealer] && gs.players[gs.dealer].inactive) {
-        // Dealer left after the hand ended — rotate to the next active player
-        // so the survivor sees their own "Next Hand" button instead of a deadlock.
         const n = gs.players.length;
         for (let i = 1; i <= n; i++) {
             const next = (gs.dealer + i) % n;
@@ -59,9 +55,9 @@ module.exports = function(io) {
                 socket.join(roomCode);
                 socket.currentRoom = roomCode;
                 
-                roomManager.joinRoom(roomCode, socket.id, data.name, true, data.maxPlayers, data.equalStack);
+                const playerId = roomManager.joinRoom(roomCode, socket.id, data.name, true, data.maxPlayers, data.equalStack);
                 
-                callback({ success: true, roomCode });
+                callback({ success: true, roomCode, playerId });
                 io.to(roomCode).emit('lobby_update', roomManager.getRoom(roomCode));
             } catch (error) {
                 callback({ success: false, message: error.message || "Server Error" });
@@ -80,9 +76,9 @@ module.exports = function(io) {
                 socket.join(roomCode);
                 socket.currentRoom = roomCode;
                 
-                roomManager.joinRoom(roomCode, socket.id, data.name, false);
+                const playerId = roomManager.joinRoom(roomCode, socket.id, data.name, false);
                 
-                callback({ success: true });
+                callback({ success: true, playerId });
                 io.to(roomCode).emit('lobby_update', roomManager.getRoom(roomCode));
             } catch (error) {
                 // If join failed, leave the socket room
@@ -146,6 +142,7 @@ module.exports = function(io) {
                 // Construct players array for gameEngine
                 const gamePlayers = liveRoom.players.map((p, i) => ({
                     id: p.id,
+                    playerId: p.playerId,
                     name: p.name,
                     stack: settings.stacks[p.id],
                     folded: false
@@ -226,6 +223,7 @@ module.exports = function(io) {
             }
 
             io.to(socket.currentRoom).emit('game_state_update', gs);
+            try { saveManager.autosave(socket.currentRoom, gs, room.players); } catch (_) {}
         });
 
         socket.on('confirm_result', () => {
@@ -292,6 +290,8 @@ module.exports = function(io) {
             if (wasDealer && DEALER_CEREMONY_PHASES.has(gs.phase) && remainingActive >= 2) {
                 rotateDealerForward(gs);
             }
+            const leaverPlayer = gs.players.find(p => p.id === socket.id);
+            gs.lastLeaver = { name: leaverPlayer ? leaverPlayer.name : 'A player', id: socket.id, atGameOver: false };
             resolveLeaveImpact(gs);
             const roomCode = socket.currentRoom;
             socket.leave(roomCode);
@@ -364,12 +364,11 @@ module.exports = function(io) {
                 }
 
                 const roomCode = roomManager.createLoadedRoom(save);
-                // Host joins the loaded room
-                roomManager.joinLoadedRoom(roomCode, socket.id, hostName);
+                const playerId = roomManager.joinLoadedRoom(roomCode, socket.id, hostName);
                 socket.join(roomCode);
                 socket.currentRoom = roomCode;
 
-                callback({ success: true, roomCode });
+                callback({ success: true, roomCode, playerId });
                 io.to(roomCode).emit('lobby_update', roomManager.getRoom(roomCode));
             } catch (e) {
                 callback({ success: false, message: e.message });
@@ -383,11 +382,11 @@ module.exports = function(io) {
                 if (!room) return callback({ success: false, message: 'Room does not exist' });
                 if (!room.isLoaded) return callback({ success: false, message: 'This is not a loaded game. Use regular join.' });
 
-                roomManager.joinLoadedRoom(roomCode, socket.id, data.name);
+                const playerId = roomManager.joinLoadedRoom(roomCode, socket.id, data.name);
                 socket.join(roomCode);
                 socket.currentRoom = roomCode;
 
-                callback({ success: true });
+                callback({ success: true, playerId });
                 io.to(roomCode).emit('lobby_update', roomManager.getRoom(roomCode));
             } catch (e) {
                 callback({ success: false, message: e.message });
@@ -433,8 +432,9 @@ module.exports = function(io) {
                 if (gs.restartHostConfirming) gs.restartHostConfirming = false;
             }
 
-            const totalActive = gs.players.filter(p => !p.inactive).length;
-            if (gs.restartApprovals.length === totalActive && totalActive > 0) {
+            const totalOriginal = gs.origSt ? Object.keys(gs.origSt).length : gs.players.length;
+            const allBackAndConnected = gs.players.every(p => !p.inactive);
+            if (gs.restartApprovals.length === totalOriginal && totalOriginal > 0 && allBackAndConnected) {
                 gs.restartHostConfirming = true;
             }
 
@@ -448,9 +448,7 @@ module.exports = function(io) {
             const gs = room.gameState;
             if (!gs.restartHostConfirming) return;
 
-            const totalActive = gs.players.filter(p => !p.inactive).length;
             const allApproved = gs.players
-                .filter(p => !p.inactive)
                 .every(p => (gs.restartApprovals || []).includes(p.id));
             if (!allApproved) return;
 
@@ -494,26 +492,149 @@ module.exports = function(io) {
             io.to(roomCode).emit('game_state_update', gs);
         });
 
+        socket.on('rejoin', ({ playerId, roomCode }, callback) => {
+            const room = roomManager.getRoom(roomCode);
+            if (!room) {
+                socket.emit('rejoin_rejected', { reason: 'room_gone' });
+                if (callback) callback({ success: false, reason: 'room_gone' });
+                return;
+            }
+
+            const player = room.players.find(p => p.playerId === playerId);
+            if (!player) {
+                socket.emit('rejoin_rejected', { reason: 'unknown_player' });
+                if (callback) callback({ success: false, reason: 'unknown_player' });
+                return;
+            }
+
+            if (player.id !== socket.id) {
+                const existingSocket = io.sockets.sockets.get(player.id);
+                if (existingSocket && existingSocket.connected) {
+                    socket.emit('rejoin_rejected', { reason: 'already_connected' });
+                    if (callback) callback({ success: false, reason: 'already_connected' });
+                    return;
+                }
+                const oldSocketId = player.id;
+                const oldSocket = io.sockets.sockets.get(oldSocketId);
+                if (oldSocket) {
+                    oldSocket.currentRoom = null;
+                    oldSocket.disconnect(true);
+                }
+                roomManager.cancelGraceTimer(player.playerId);
+                player.id = socket.id;
+                player.inactive = false;
+                player.disconnected = false;
+                player.disconnectedAt = null;
+                if (room.hostId === oldSocketId) room.hostId = socket.id;
+                room.sockets.add(socket.id);
+
+                const gs = room.gameState;
+                if (gs && gs.players) {
+                    const gp = gs.players.find(p => p.id === oldSocketId);
+                    if (gp) { gp.id = socket.id; gp.inactive = false; gp.disconnected = false; }
+                }
+            }
+
+            socket.join(roomCode);
+            socket.currentRoom = roomCode;
+
+            socket.emit('lobby_update', room);
+            if (room.setupPhase === 'in_game' && room.gameState) {
+                socket.emit('game_state_update', room.gameState);
+            }
+
+            socket.to(roomCode).emit('player_reconnected', { name: player.name });
+            socket.to(roomCode).emit('lobby_update', room);
+            if (room.setupPhase === 'in_game' && room.gameState) {
+                socket.to(roomCode).emit('game_state_update', room.gameState);
+            }
+
+            if (callback) callback({ success: true });
+        });
+
+        socket.on('attempt_rejoin', (data, callback) => {
+            const room = roomManager.getRoom(data.roomCode);
+            if (!room) return callback({ success: false, reason: 'not_found' });
+
+            socket.join(data.roomCode);
+            socket.currentRoom = data.roomCode;
+
+            const player = room.players.find(p => p.playerId === data.playerId);
+            if (!player) {
+                socket.leave(data.roomCode);
+                socket.currentRoom = null;
+                return callback({ success: false, reason: 'not_found' });
+            }
+
+            if (player.id === socket.id) {
+                socket.emit('lobby_update', room);
+                if (room.setupPhase === 'in_game' && room.gameState) {
+                    socket.emit('game_state_update', room.gameState);
+                }
+                return callback({ success: true, reason: 'already_attached' });
+            }
+
+            const existingSocket = io.sockets.sockets.get(player.id);
+            if (existingSocket && existingSocket.connected) {
+                socket.leave(data.roomCode);
+                socket.currentRoom = null;
+                return callback({ success: false, reason: 'already_connected' });
+            }
+
+            roomManager.cancelGraceTimer(player.playerId);
+
+            const oldSocketId = player.id;
+            player.id = socket.id;
+            player.inactive = false;
+            player.disconnected = false;
+            player.disconnectedAt = null;
+            if (room.hostId === oldSocketId) room.hostId = socket.id;
+            room.sockets.add(socket.id);
+
+            const gs = room.gameState;
+            if (gs && gs.players) {
+                const gp = gs.players.find(p => p.id === oldSocketId);
+                if (gp) { gp.id = socket.id; gp.inactive = false; gp.disconnected = false; }
+            }
+
+            socket.join(data.roomCode);
+            socket.currentRoom = data.roomCode;
+
+            socket.emit('lobby_update', room);
+            if (room.setupPhase === 'in_game' && gs) {
+                socket.emit('game_state_update', gs);
+            }
+            socket.to(data.roomCode).emit('player_reconnected', { name: player.name });
+            socket.to(data.roomCode).emit('lobby_update', room);
+            if (room.setupPhase === 'in_game' && gs) {
+                socket.to(data.roomCode).emit('game_state_update', gs);
+            }
+
+            callback({ success: true });
+        });
+
+        socket.on('ping', () => {});
+
         socket.on('disconnect', () => {
             if (socket.currentRoom) {
                 const room = roomManager.getRoom(socket.currentRoom);
                 if (room && room.setupPhase === 'in_game') {
-                    // Fold if it's their turn
                     const gs = room.gameState;
-                    const actI = gs.queue && gs.queue[0];
-                    if (actI !== undefined && gs.players[actI] && gs.players[actI].id === socket.id) {
-                        const { processAction } = require('./gameEngine');
-                        processAction(gs, { action: 'fold', playerId: socket.id });
-                    }
-                    const wasDealer = gs.players[gs.dealer] && gs.players[gs.dealer].id === socket.id;
-                    roomManager.markPlayerInactive(socket.currentRoom, socket.id);
-                    const remainingActive = gs.players.filter(p => !p.inactive).length;
-                    if (wasDealer && DEALER_CEREMONY_PHASES.has(gs.phase) && remainingActive >= 2) {
-                        rotateDealerForward(gs);
-                    }
-                    resolveLeaveImpact(gs);
+                    const playerInfo = roomManager.markPlayerDisconnected(socket.currentRoom, socket.id);
                     io.to(socket.currentRoom).emit('lobby_update', room);
                     io.to(socket.currentRoom).emit('game_state_update', gs);
+
+                    if (playerInfo) {
+                        const roomCode = socket.currentRoom;
+                        const graceTimer = setTimeout(() => {
+                            const liveRoom = roomManager.getRoom(roomCode);
+                            if (!liveRoom) return;
+                            const lp = liveRoom.players.find(p => p.playerId === playerInfo.playerId);
+                            if (!lp || !lp.disconnected) return;
+                            resolveLeaveImpact(liveRoom.gameState);
+                        }, 300000);
+                        roomManager.setGraceTimer(playerInfo.playerId, graceTimer);
+                    }
                 } else {
                     roomManager.removeClientFromRoom(socket.currentRoom, socket.id);
                     const updatedRoom = roomManager.getRoom(socket.currentRoom);

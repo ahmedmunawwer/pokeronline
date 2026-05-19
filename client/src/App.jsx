@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import socket from './socket';
 import Lobby from './components/Lobby';
 import SetupFlow from './components/SetupFlow';
@@ -12,31 +12,94 @@ function App() {
     const [hostEnded, setHostEnded] = useState(false);
     const [leaveDialog, setLeaveDialog] = useState(null);
 
+    const doSync = useCallback(() => {
+        const stored = localStorage.getItem('ag_session');
+        if (!stored) return;
+        try {
+            const saved = JSON.parse(stored);
+            if (!saved.roomCode || !saved.playerId) return;
+            socket.emit('attempt_rejoin', { playerId: saved.playerId, roomCode: saved.roomCode }, (res) => {
+                if (res && res.success) {
+                    setRoomCode(saved.roomCode);
+                } else if (res && res.reason === 'not_found') {
+                    localStorage.removeItem('ag_session');
+                    setRoomCode(null);
+                    setLobbyState(null);
+                    setGameState(null);
+                }
+            });
+        } catch {
+            localStorage.removeItem('ag_session');
+        }
+    }, []);
+
     useEffect(() => {
-        socket.on('game_state_update', (newState) => {
-            setGameState(newState);
-        });
+        const handleConnect = () => doSync();
 
-        socket.on('lobby_update', (room) => {
-            setLobbyState(room);
-        });
-        
-        socket.on('room_error', (msg) => {
-            alert(msg);
+        const handleVisibility = () => {
+            if (document.visibilityState !== 'visible') return;
+            const stored = localStorage.getItem('ag_session');
+            if (!stored) return;
+            try { const s = JSON.parse(stored); if (!s.roomCode) return; } catch { return; }
+            if (!socket.connected) socket.connect();
+            setTimeout(doSync, 150);
+        };
+
+        const handleFocus = () => {
+            const stored = localStorage.getItem('ag_session');
+            if (!stored) return;
+            try { const s = JSON.parse(stored); if (!s.roomCode) return; } catch { return; }
+            if (!socket.connected) socket.connect();
+            setTimeout(doSync, 150);
+        };
+
+        const keepAlive = setInterval(() => {
+            const stored = localStorage.getItem('ag_session');
+            if (!stored) return;
+            try { const s = JSON.parse(stored); if (s.roomCode && !socket.connected) socket.connect(); } catch {}
+        }, 8000);
+
+        socket.on('connect', handleConnect);
+        socket.on('game_state_update', (newState) => { setGameState(newState); });
+        socket.on('lobby_update', (room) => { setLobbyState(room); });
+        socket.on('room_error', (msg) => { alert(msg); setRoomCode(null); });
+        socket.on('game_ended_by_host', () => { setHostEnded(true); });
+        socket.on('rejoin_rejected', () => {
+            localStorage.removeItem('ag_session');
             setRoomCode(null);
+            setLobbyState(null);
+            setGameState(null);
+            alert('This game is no longer available');
         });
+        socket.on('player_reconnected', () => {});
 
-        socket.on('game_ended_by_host', () => {
-            setHostEnded(true);
-        });
+        document.addEventListener('visibilitychange', handleVisibility);
+        window.addEventListener('focus', handleFocus);
+        if (socket.connected) handleConnect();
 
         return () => {
+            socket.off('connect', handleConnect);
             socket.off('game_state_update');
             socket.off('lobby_update');
             socket.off('room_error');
             socket.off('game_ended_by_host');
+            socket.off('rejoin_rejected');
+            socket.off('player_reconnected');
+            document.removeEventListener('visibilitychange', handleVisibility);
+            window.removeEventListener('focus', handleFocus);
+            clearInterval(keepAlive);
         };
-    }, []);
+    }, [doSync]);
+
+    useEffect(() => {
+        const heartbeat = setInterval(() => {
+            if (socket.connected && roomCode) {
+                socket.emit('ping');
+            }
+        }, 25000);
+        return () => clearInterval(heartbeat);
+    }, [roomCode]);
+
 
     if (hostEnded) {
         return (
@@ -45,7 +108,7 @@ function App() {
                     <div style={{fontSize:48,marginBottom:12}}>🚫</div>
                     <h2 style={{color:"#ff8a80",margin:"0 0 8px",fontSize:20,fontWeight:800}}>Game Ended by Host</h2>
                     <p style={{color:"rgba(255,255,255,0.5)",fontSize:14,margin:"0 0 24px"}}>The host has ended the session.</p>
-                    <button onClick={()=>{setHostEnded(false);setRoomCode(null);setLobbyState(null);setGameState(null);}} style={{background:"#f0c040",color:"#1a0f0a",border:"none",borderRadius:10,padding:"12px 30px",fontSize:15,fontWeight:800,cursor:"pointer",width:"100%"}}>Return to Home</button>
+                    <button onClick={()=>{setHostEnded(false);localStorage.removeItem('ag_session');setRoomCode(null);setLobbyState(null);setGameState(null);}} style={{background:"#f0c040",color:"#1a0f0a",border:"none",borderRadius:10,padding:"12px 30px",fontSize:15,fontWeight:800,cursor:"pointer",width:"100%"}}>Return to Home</button>
                 </div>
             </div>
         );
@@ -63,7 +126,7 @@ function App() {
     const isHost = lobbyState?.hostId === socket.id;
     const inGame = lobbyState?.setupPhase === 'in_game';
 
-    const clearRoom = () => { setLeaveDialog(null); setRoomCode(null); setLobbyState(null); setGameState(null); };
+    const clearRoom = () => { localStorage.removeItem('ag_session'); setLeaveDialog(null); setRoomCode(null); setLobbyState(null); setGameState(null); };
 
     const handleLeaveClick = () => {
         if (isHost) {
@@ -114,9 +177,9 @@ function App() {
             {leaveDialog && <ConfirmDialog title={leaveDialog.title} body={leaveDialog.body} confirmLabel={leaveDialog.confirmLabel} confirmBg={leaveDialog.confirmBg} onConfirm={leaveDialog.onConfirm} onCancel={() => setLeaveDialog(null)} />}
 
             {lobbyState.setupPhase !== 'in_game' ? (
-                <SetupFlow lobbyState={lobbyState} onLeave={() => { socket.emit('leave_room'); setRoomCode(null); setLobbyState(null); setGameState(null); }} />
+                <SetupFlow lobbyState={lobbyState} onLeave={() => { socket.emit('leave_room'); clearRoom(); }} />
             ) : (
-                gameState ? <GameTable gameState={gameState} emitAction={emitAction} socket={socket} myId={socket.id} isHost={lobbyState.hostId === socket.id} onLeave={() => { socket.emit('leave_room'); setRoomCode(null); setLobbyState(null); setGameState(null); }} /> : <div style={{textAlign:"center", marginTop: 50}}>Loading Game...</div>
+                gameState ? <GameTable gameState={gameState} emitAction={emitAction} socket={socket} myId={socket.id} isHost={lobbyState.hostId === socket.id} onLeave={() => { socket.emit('leave_room'); clearRoom(); }} /> : <div style={{textAlign:"center", marginTop: 50}}>Loading Game...</div>
             )}
         </div>
     );

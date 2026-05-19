@@ -31,13 +31,14 @@ function saveGame(gameState, roomPlayers) {
 
 function listSaves() {
     if (!fs.existsSync(SAVE_DIR)) return [];
-    const files = fs.readdirSync(SAVE_DIR).filter(f => f.startsWith('save_') && f.endsWith('.json'));
+    const files = fs.readdirSync(SAVE_DIR).filter(f => f.endsWith('.json'));
     return files.map(f => {
         try {
             const data = JSON.parse(fs.readFileSync(path.join(SAVE_DIR, f), 'utf8'));
             return {
                 saveId: data.saveId,
                 savedAt: data.savedAt,
+                isAutosave: data.isAutosave || false,
                 playerNames: data.playerNames,
                 playerCount: data.playerCount,
                 handNumber: data.handNumber,
@@ -50,7 +51,9 @@ function listSaves() {
 }
 
 function loadSave(saveId) {
-    const filePath = path.join(SAVE_DIR, `save_${saveId}.json`);
+    const filePath = saveId.startsWith('auto_')
+        ? path.join(SAVE_DIR, `${saveId}.json`)
+        : path.join(SAVE_DIR, `save_${saveId}.json`);
     if (!fs.existsSync(filePath)) return null;
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
@@ -127,4 +130,22 @@ function remapPlayerIds(gameState, nameToNewId) {
     }
 }
 
-module.exports = { saveGame, listSaves, loadSave, remapPlayerIds };
+function autosave(roomCode, gameState, roomPlayers) {
+    const stateCopy = JSON.parse(JSON.stringify(gameState));
+    delete stateCopy.confirmations;
+    const saveData = {
+        saveId: 'auto_' + roomCode,
+        savedAt: new Date().toISOString(),
+        isAutosave: true,
+        roomCode,
+        playerNames: roomPlayers.map(p => p.name),
+        playerCount: roomPlayers.length,
+        gameState: stateCopy,
+        handNumber: gameState.hn,
+        sessionNumber: gameState.sn
+    };
+    const filePath = path.join(SAVE_DIR, `auto_${roomCode}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(saveData, null, 2));
+}
+
+module.exports = { saveGame, autosave, listSaves, loadSave, remapPlayerIds };

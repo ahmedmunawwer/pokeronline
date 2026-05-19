@@ -142,6 +142,7 @@ export default function SetupFlow({ lobbyState, onLeave }) {
         if (!isHost) {
             return (
                 <div style={{display:"flex",justifyContent:"center",alignItems:"center",minHeight:"80vh",padding:20, textAlign:"center"}}>
+                    <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
                     <div>
                         <div style={{fontSize:40, animation:"spin 2s linear infinite", marginBottom:20}}>⚙️</div>
                         <h2 style={{color:G}}>Host is setting up the game...</h2>

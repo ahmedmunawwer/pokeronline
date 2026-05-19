@@ -13,7 +13,13 @@ const io = new Server(server, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"]
-    }
+    },
+    pingInterval: 8000,
+    pingTimeout: 60000,
+    connectTimeout: 45000,
+    transports: ['websocket', 'polling'],
+    allowUpgrades: true,
+    upgradeTimeout: 10000
 });
 
 require('./socketEvents')(io);

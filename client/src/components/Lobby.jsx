@@ -75,6 +75,13 @@ export default function Lobby({ onJoined }) {
             equalStack
         }, (res) => {
             if (res.success) {
+                localStorage.setItem('ag_session', JSON.stringify({
+                    playerId: res.playerId,
+                    roomCode: res.roomCode,
+                    playerName: hostName.trim(),
+                    isHost: true,
+                    joinedAt: Date.now()
+                }));
                 onJoined(res.roomCode);
             } else {
                 setError(res.message);
@@ -127,6 +134,13 @@ export default function Lobby({ onJoined }) {
             name: joinName.trim()
         }, (res) => {
             if (res.success) {
+                localStorage.setItem('ag_session', JSON.stringify({
+                    playerId: res.playerId,
+                    roomCode: joinCode,
+                    playerName: joinName.trim(),
+                    isHost: false,
+                    joinedAt: Date.now()
+                }));
                 onJoined(joinCode);
             } else {
                 setError(res.message);
@@ -155,6 +169,13 @@ export default function Lobby({ onJoined }) {
             hostName: loadHostName.trim()
         }, (res) => {
             if (res.success) {
+                localStorage.setItem('ag_session', JSON.stringify({
+                    playerId: res.playerId,
+                    roomCode: res.roomCode,
+                    playerName: loadHostName.trim(),
+                    isHost: true,
+                    joinedAt: Date.now()
+                }));
                 onJoined(res.roomCode);
             } else {
                 setError(res.message);
