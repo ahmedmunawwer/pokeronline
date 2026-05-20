@@ -1,0 +1,88 @@
+{
+  "savedAt": "2026-05-02T20:37:10.441Z",
+  "playerNames": [
+    "Host",
+    "Joinee 1"
+  ],
+  "playerCount": 2,
+  "gameState": {
+    "phase": "preflop",
+    "players": [
+      {
+        "id": "SvbOiBNqpLv0mfQlAAAX",
+        "name": "Host",
+        "stack": 990,
+        "folded": false
+      },
+      {
+        "id": "AlzD5Kvy9V8NmWvIAAAR",
+        "name": "Joinee 1",
+        "stack": 990,
+        "folded": false
+      }
+    ],
+    "cfg": {
+      "sb": 5,
+      "bb": 10,
+      "sessions": 3
+    },
+    "pot": 20,
+    "cp": [],
+    "dealer": 1,
+    "actI": 0,
+    "queue": [
+      0
+    ],
+    "hc": {
+      "AlzD5Kvy9V8NmWvIAAAR": 10,
+      "SvbOiBNqpLv0mfQlAAAX": 10
+    },
+    "ai": [],
+    "rBets": {
+      "0": 10,
+      "1": 10
+    },
+    "curBet": 10,
+    "lr": 10,
+    "lfb": 10,
+    "scores": {
+      "AlzD5Kvy9V8NmWvIAAAR": 0,
+      "SvbOiBNqpLv0mfQlAAAX": 0
+    },
+    "history": [],
+    "undoStack": [],
+    "pi": 0,
+    "hn": 1,
+    "sn": 1,
+    "log": [
+      "Host — your action",
+      "Joinee 1 calls 5",
+      "Joinee 1 — first to act",
+      "BB: Host (10)",
+      "SB: Joinee 1 (5)",
+      "Dealer: Joinee 1",
+      "─ Hand #1 | Sess 1/3 ─"
+    ],
+    "curActs": [
+      {
+        "id": "AlzD5Kvy9V8NmWvIAAAR",
+        "type": "call",
+        "amt": 5
+      }
+    ],
+    "origSt": {
+      "AlzD5Kvy9V8NmWvIAAAR": 1000,
+      "SvbOiBNqpLv0mfQlAAAX": 1000
+    },
+    "stacksBefore": {
+      "cUc7OmWU-PbqSHAQAAAV": 1000,
+      "AlzD5Kvy9V8NmWvIAAAR": 1000
+    },
+    "sbI": 1,
+    "bbI": 0,
+    "wi": null,
+    "ba": "Raise"
+  },
+  "handNumber": 1,
+  "sessionNumber": 1
+}

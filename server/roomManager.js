@@ -90,6 +90,7 @@ function joinRoom(roomCode, socketId, name, isHost = false, maxPlayers = 6, equa
     room.players.push({
         id: socketId,
         name: trimmedName || `Player ${room.players.length + 1}`,
+        pId: socketId + '_' + Date.now(),
         ready: isHost,
         stack: 0,
         isHost: isHost
@@ -146,6 +147,7 @@ function joinLoadedRoom(roomCode, socketId, name) {
     room.players.push({
         id: socketId,
         name: nameMatch, // Use exact case from save
+        pId: socketId + '_' + Date.now(),
         ready: true,
         stack: 0,
         isHost: isHost

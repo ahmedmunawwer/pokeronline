@@ -25,15 +25,18 @@ export default function Lobby({ onJoined }) {
 
     const [error, setError] = useState("");
 
-    // Refresh server-driven autofill every time the home screen is shown
+    // Fetch latest room codes when entering host/join screens
     useEffect(() => {
         if (view !== 'main') return;
-        // Reset join form so stale values don't linger
+
+        // Reset forms when returning to main
         setJoinCode('');
         setJoinName('Joinee 1');
         setNameLoaded(false);
         setExistingNames([]);
         setNameError('');
+        setHostRoomCode('');
+        setError('');
 
         const fetchCodes = () => {
             socket.emit('get_default_room_codes', (res) => {
@@ -62,6 +65,41 @@ export default function Lobby({ onJoined }) {
         return () => { socket.off('connect', fetchCodes); };
     }, [view]);
 
+    // Auto-fill join code when entering join screen
+    useEffect(() => {
+        if (view !== 'join') return;
+        const fetchJoin = () => {
+            socket.emit('get_default_room_codes', (res) => {
+                if (res.latestJoineeCode) {
+                    setJoinCode(res.latestJoineeCode);
+                    if (res.latestJoineeCode.length === 1 && !nameLoaded) {
+                        socket.emit('get_default_name', res.latestJoineeCode, (nameRes) => {
+                            if (nameRes?.name) {
+                                setJoinName(nameRes.name);
+                                setExistingNames(nameRes.existingNames || []);
+                                setNameLoaded(true);
+                            }
+                        });
+                    }
+                }
+            });
+        };
+        if (socket.connected) fetchJoin();
+        else socket.once('connect', fetchJoin);
+    }, [view]);
+
+    // Auto-fill host code when entering host screen
+    useEffect(() => {
+        if (view !== 'host') return;
+        const fetchHost = () => {
+            socket.emit('get_default_room_codes', (res) => {
+                if (res.nextAvailableHostCode) setHostRoomCode(res.nextAvailableHostCode);
+            });
+        };
+        if (socket.connected) fetchHost();
+        else socket.once('connect', fetchHost);
+    }, [view]);
+
     const doHost = () => {
         if (!hostName.trim()) return setError("Please enter your name");
         const mp = parseInt(maxPlayers);
@@ -75,7 +113,7 @@ export default function Lobby({ onJoined }) {
             equalStack
         }, (res) => {
             if (res.success) {
-                onJoined(res.roomCode);
+                onJoined(res.roomCode, hostName.trim(), res.playerId);
             } else {
                 setError(res.message);
             }
@@ -127,7 +165,7 @@ export default function Lobby({ onJoined }) {
             name: joinName.trim()
         }, (res) => {
             if (res.success) {
-                onJoined(joinCode);
+                onJoined(joinCode, joinName.trim(), res.playerId);
             } else {
                 setError(res.message);
             }
@@ -155,7 +193,7 @@ export default function Lobby({ onJoined }) {
             hostName: loadHostName.trim()
         }, (res) => {
             if (res.success) {
-                onJoined(res.roomCode);
+                onJoined(res.roomCode, loadHostName.trim(), res.playerId);
             } else {
                 setError(res.message);
             }
