@@ -90,7 +90,12 @@ function App() {
     };
   }, []);
 
-  if (reconnecting && !lobbyState) {
+  // Show spinner during ALL reconnects, not just the initial load — mid-game reconnects
+  // briefly invalidate local seat identification because socket.id changes the moment the
+  // connection re-establishes, but gameState/lobbyState still carry the old ID until the
+  // sync_reconnect round-trip completes. Rendering the game during that window breaks
+  // the local player's seat, action buttons, and hand display.
+  if (reconnecting) {
     return (
       <div style={{minHeight:'100vh',background:'radial-gradient(circle at center, #3e2723 0%, #1a0f0a 100%)',display:'flex',alignItems:'center',justifyContent:'center'}}>
         <div style={{textAlign:'center'}}>
