@@ -31,7 +31,7 @@ const TONE_STYLES = {
     idle:    { bg: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)', border: 'rgba(255,255,255,0.10)', glow: '0 4px 12px rgba(0,0,0,0.45)',                                          accent: DIM_STRONG, label: 'Idle'    },
 };
 
-export default function GameTable({ gameState, emitAction, socket, myId, isHost, onLeave }) {
+export default function GameTable({ gameState, emitAction, socket, myId, isHost, onLeave, appPlayerName, appRoomCode }) {
     const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver } = gameState;
 
     const [rm, setRm] = useState(false);
@@ -217,6 +217,12 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                     backdropFilter:'blur(8px)',
                     gap:12
                 }}>
+                    {/* landscape-only: identity row — hidden in portrait/desktop via CSS */}
+                    <div className="gt-app-info">
+                        {appPlayerName && <span className="gt-app-info__name">{appPlayerName}</span>}
+                        {appPlayerName && appRoomCode && <span className="gt-app-info__sep">·</span>}
+                        {appRoomCode && <span className="gt-app-info__room">{appRoomCode}</span>}
+                    </div>
                     <div style={{display:'flex', alignItems:'baseline', gap:10, flex:1, minWidth:0, overflow:'hidden', whiteSpace:'nowrap'}}>
                         <div style={{fontSize:16, fontWeight:900, color:G, letterSpacing:1.2, flexShrink:0}}>
                             {PL[phase]||phase}

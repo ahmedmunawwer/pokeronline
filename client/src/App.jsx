@@ -94,8 +94,8 @@ function App() {
     };
 
     return (
-        <div style={{minHeight:"100vh",background:"radial-gradient(circle at center, #3e2723 0%, #1a0f0a 100%)",color:"#fff",padding:"12px 14px",fontFamily:"'Segoe UI',sans-serif",boxSizing:"border-box"}}>
-            <div style={{maxWidth: 460, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, background: "rgba(0,0,0,0.4)", padding: "10px 15px", borderRadius: 12, border: "1px solid rgba(240,192,64,0.3)"}}>
+        <div className="app-shell" style={{minHeight:"100vh",background:"radial-gradient(circle at center, #3e2723 0%, #1a0f0a 100%)",color:"#fff",padding:"12px 14px",fontFamily:"'Segoe UI',sans-serif",boxSizing:"border-box"}}>
+            <div className="app-header-bar" style={{maxWidth: 460, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, background: "rgba(0,0,0,0.4)", padding: "10px 15px", borderRadius: 12, border: "1px solid rgba(240,192,64,0.3)"}}>
                 <div style={{display: "flex", alignItems: "center", gap: 14}}>
                     {myPlayer && (
                         <div style={{display: "flex", alignItems: "center", gap: 5}}>
@@ -116,7 +116,7 @@ function App() {
             {lobbyState.setupPhase !== 'in_game' ? (
                 <SetupFlow lobbyState={lobbyState} onLeave={() => { socket.emit('leave_room'); setRoomCode(null); setLobbyState(null); setGameState(null); }} />
             ) : (
-                gameState ? <GameTable gameState={gameState} emitAction={emitAction} socket={socket} myId={socket.id} isHost={lobbyState.hostId === socket.id} onLeave={() => { socket.emit('leave_room'); setRoomCode(null); setLobbyState(null); setGameState(null); }} /> : <div style={{textAlign:"center", marginTop: 50}}>Loading Game...</div>
+                gameState ? <GameTable gameState={gameState} emitAction={emitAction} socket={socket} myId={socket.id} isHost={lobbyState.hostId === socket.id} onLeave={() => { socket.emit('leave_room'); setRoomCode(null); setLobbyState(null); setGameState(null); }} appPlayerName={myPlayer?.name} appRoomCode={roomCode} /> : <div style={{textAlign:"center", marginTop: 50}}>Loading Game...</div>
             )}
         </div>
     );
