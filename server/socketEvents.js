@@ -408,6 +408,9 @@ module.exports = function(io) {
                 socket.join(roomCode);
                 socket.currentRoom = roomCode;
 
+                // TODO: add playerId (player.pId) to this callback so the client can store
+                // it in localStorage for pId-based reconnect matching — same as join_game does.
+                // Without it, reconnect for loaded-game joiners falls back to name-only matching.
                 callback({ success: true });
                 io.to(roomCode).emit('lobby_update', roomManager.getRoom(roomCode));
             } catch (e) {
@@ -539,7 +542,17 @@ module.exports = function(io) {
             const oldId = player.id;
             const playerId = player.pId; // stable identifier
 
-            // Remap socket ID everywhere in the room
+            // SOCKET ID REMAP — CRITICAL FOR RECONNECT
+            // Every game-state structure keyed by or containing socket.id MUST be
+            // remapped here. Omitting any will cause silent reconnect bugs that only
+            // surface in specific phases (e.g., showdown approval lock from missing
+            // potAward.eligibleIds remap).
+            //
+            // Currently remapped: gs.players[*].id, room.hostId, gs.hc/scores/origSt/rBets
+            // keys, gs.ai array, gs.confirmations array, gs.restartApprovals array,
+            // gs.history[*].wid/.net keys, gs.potAward.eligibleIds, gs.cp[*].eligible[*].id.
+            //
+            // When adding new game state with socket IDs, ADD THE REMAP BELOW.
             player.id = socket.id;
             if (room.hostId === oldId) room.hostId = socket.id;
 
@@ -575,6 +588,26 @@ module.exports = function(io) {
                     gs.history.forEach(h => {
                         if (h.wid === oldId) h.wid = socket.id;
                         if (h.net && h.net[oldId] !== undefined) { h.net[socket.id] = h.net[oldId]; delete h.net[oldId]; }
+                    });
+                }
+
+                // Remap potAward.eligibleIds — without this, a reconnected pot contributor
+                // sees "Waiting for approval" instead of Approve/Dissent and the game locks.
+                if (gs.potAward && gs.potAward.eligibleIds) {
+                    gs.potAward.eligibleIds = gs.potAward.eligibleIds.map(
+                        id => id === oldId ? socket.id : id
+                    );
+                }
+
+                // Remap cp eligible player IDs — keeps totalApproversForThisPot count
+                // correct and ensures dealer-exclusion logic compares current IDs.
+                if (gs.cp) {
+                    gs.cp.forEach(pot => {
+                        if (pot.eligible) {
+                            pot.eligible.forEach(p => {
+                                if (p.id === oldId) p.id = socket.id;
+                            });
+                        }
                     });
                 }
             }
