@@ -310,4 +310,39 @@ function HandRankModal({onClose}){
         </div>
     );
 }
-export { HoleCard, CommCard, getCommunityCards, AnimatedPot, AnimatedSidePot, CDlg, SSDlg, HRDlg, StatsMod, ChipStackSVG, buildPots, HandRankModal };
+function PotDetailModal({ pots, players, onClose }) {
+  return (
+    <Ov><DB>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+        <span style={{color:G, fontWeight:800, fontSize:15}}>💰 Pot Breakdown</span>
+        <Btn sm bg="#333" onClick={onClose}>✕</Btn>
+      </div>
+      <div style={{display:'flex', flexDirection:'column', gap:8}}>
+        {pots.map((pot, i) => (
+          <div key={i} style={{
+            background:'rgba(0,0,0,0.35)',
+            border:'1px solid rgba(240,192,64,0.2)',
+            borderRadius:12,
+            padding:'10px 12px'
+          }}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+              <span style={{fontSize:12, fontWeight:700, color:G, textTransform:'uppercase', letterSpacing:0.5}}>{pot.label}</span>
+              <span style={{fontSize:16, fontWeight:900, color:G}}>{pot.amount}</span>
+            </div>
+            <div style={{fontSize:11, color:DIM, marginBottom:5}}>Eligible:</div>
+            {pot.eligible.map(ep => {
+              const pIdx = players.findIndex(p => p.id === ep.id);
+              return (
+                <div key={ep.id} style={{display:'flex', alignItems:'center', gap:6, marginBottom:2}}>
+                  <div style={{width:6, height:6, borderRadius:'50%', background:PLAYER_COLORS[pIdx % PLAYER_COLORS.length]}} />
+                  <span style={{fontSize:12, color:'#fff', fontWeight:600}}>{ep.name}</span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </DB></Ov>
+  );
+}
+export { HoleCard, CommCard, getCommunityCards, AnimatedPot, AnimatedSidePot, CDlg, SSDlg, HRDlg, StatsMod, ChipStackSVG, buildPots, HandRankModal, PotDetailModal };

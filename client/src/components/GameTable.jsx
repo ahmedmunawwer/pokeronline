@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ConfirmDialog from './ConfirmDialog';
 import PhaseModal from './PhaseModal';
-import { Btn, Card, Ov, DB, HoleCard, CommCard, getCommunityCards, CDlg, SSDlg, HRDlg, StatsMod, ChipStackSVG, PLAYER_COLORS, G, SV, BR, DIM, MED, PL, RVLI, HandRankModal } from './UI';
+import { Btn, Card, Ov, DB, HoleCard, CommCard, getCommunityCards, CDlg, SSDlg, HRDlg, StatsMod, ChipStackSVG, PLAYER_COLORS, G, SV, BR, DIM, MED, PL, RVLI, HandRankModal, buildPots, PotDetailModal } from './UI';
 
 // Equal-angular ellipse spacing — local player always at bottom (90°), others arc clockwise.
 function getSeatPositions(n) {
@@ -49,9 +49,11 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
     const [showHandRank, setShowHandRank] = useState(false);
     const [showCumulative, setShowCumulative] = useState(false);
     const [confirmingAllIn, setConfirmingAllIn] = useState(false);
+    const [showPotModal, setShowPotModal] = useState(false);
 
     useEffect(() => { setShowCumulative(false); }, [sn]);
     useEffect(() => { setConfirmingAllIn(false); }, [rm]);
+    useEffect(() => { if (potAward) setShowPotModal(false); }, [potAward]);
 
     const n = players ? players.length : 0;
     const actI = queue ? queue[0] : null;
@@ -68,6 +70,14 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
     const myConfirmed = confirmed.includes(myId);
     const activeWithChips = isBet ? players.filter(p => !p.folded && p.stack > 0).length : 0;
     const canRaiseBtn = isBet && !(curBet > lfb && (rBets[actI]||0) >= lfb) && activeWithChips > 1;
+
+    const effectivePots = (cp && cp.length > 0)
+        ? cp
+        : (ai && ai.length > 0 ? buildPots(players, hc, ai) : []);
+    const hasMultiplePots = effectivePots.length > 1;
+    const totalPot = hasMultiplePots
+        ? effectivePots.reduce((s, p) => s + p.amount, 0)
+        : pot;
 
     // Handlers
     const proceedReveal = () => emitAction('reveal');
@@ -190,6 +200,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                 {/* ── Modals and overlays (unchanged) ─────────────────────── */}
                 {showStats && <StatsMod hist={history} pls={players} scores={scores} onClose={()=>setShowStats(false)}/>}
                 {showHandRank && <HandRankModal onClose={()=>setShowHandRank(false)}/>}
+                {showPotModal && hasMultiplePots && <PotDetailModal pots={effectivePots} players={players} onClose={()=>setShowPotModal(false)}/>}
                 {cdlg && <CDlg d={cdlg} onClose={()=>setCdlg(null)} onConfirm={doConfirm}/>}
                 {hrd && <HRDlg d={hrd} onSelect={hr=>{const w=hrd.wi;setHrd(null);finalWin(w,hr);}} setTier={t=>setHrd({...hrd,tier:t})} onSkip={()=>{const w=hrd.wi;setHrd(null);finalWin(w,null);}}/>}
                 {sseld && <SSDlg d={sseld} sel={ssel} setSel={setSsel} onClose={()=>{setSseld(null);setSsel([]);}} onSplit={(e,a,l)=>{const names=e.map(x=>x.name).join(" & ");setSseld(null);setSsel([]);setCdlg({type:"split",eligible:e,amt:a,label:l,names});}}/>}
@@ -251,17 +262,24 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                         {/* Center: pot pill + community cards */}
                         <div style={{position:'relative', zIndex:25, display:'flex', flexDirection:'column', alignItems:'center', gap:8}}>
                             {/* Pot pill */}
-                            <div style={{
-                                display:'flex', flexDirection:'column', alignItems:'center',
-                                background:'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.3) 100%)',
-                                border:`1px solid rgba(240,192,64,0.45)`,
-                                borderRadius:999,
-                                padding:'4px 14px',
-                                boxShadow:'0 4px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)',
-                                minWidth:110
-                            }}>
-                                <div style={{fontSize:9, color:'rgba(255,255,255,0.55)', textTransform:'uppercase', letterSpacing:1.5, fontWeight:800}}>Main Pot</div>
-                                <div style={{fontSize:18, fontWeight:900, color:G, lineHeight:1.1, textShadow:'0 0 12px rgba(240,192,64,0.4)'}}>{pot}</div>
+                            <div
+                                onClick={() => hasMultiplePots && setShowPotModal(true)}
+                                style={{
+                                    display:'flex', flexDirection:'column', alignItems:'center',
+                                    background:'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.3) 100%)',
+                                    border:`1px solid rgba(240,192,64,${hasMultiplePots ? 0.75 : 0.45})`,
+                                    borderRadius:999,
+                                    padding:'4px 14px',
+                                    boxShadow:'0 4px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)',
+                                    minWidth:110,
+                                    cursor: hasMultiplePots ? 'pointer' : 'default',
+                                }}
+                            >
+                                <div style={{display:'flex', alignItems:'center', gap:4, fontSize:9, color:'rgba(255,255,255,0.55)', textTransform:'uppercase', letterSpacing:1.5, fontWeight:800}}>
+                                    {hasMultiplePots ? 'POTS' : 'MAIN POT'}
+                                    {hasMultiplePots && <span style={{fontSize:10, opacity:0.6}}>ⓘ</span>}
+                                </div>
+                                <div style={{fontSize:18, fontWeight:900, color:G, lineHeight:1.1, textShadow:'0 0 12px rgba(240,192,64,0.4)'}}>{totalPot}</div>
                             </div>
 
                             {/* Community cards — single row with ghost placeholders */}
