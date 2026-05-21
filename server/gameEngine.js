@@ -91,7 +91,7 @@ function buildPots(players, hc, aiIds) {
         const excess = contrib - Math.min(contrib, highestAI);
         remainAmt += excess;
         const player = players.find(p => p.id === id);
-        if (player && !player.folded && contrib >= highestAI) {
+        if (player && !player.folded && contrib > highestAI) {
             remainEligible.push(player);
         }
     }
@@ -193,7 +193,7 @@ function processAction(state, actionObj) {
         state.players = np;
         addLog(state, state.players[i].name + " folds");
         
-        if (np.filter(p => !p.folded && p.stack > 0).length === 1 && np.filter(p => !p.folded).length === 1) {
+        if (np.filter(p => !p.folded).length === 1) {
             awardFinal(state, np.findIndex(p => !p.folded), np, state.pot);
             return true;
         }
