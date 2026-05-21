@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ConfirmDialog from './ConfirmDialog';
 import PhaseModal from './PhaseModal';
-import { Btn, Card, Ov, DB, HoleCard, CommCard, getCommunityCards, CDlg, SSDlg, HRDlg, StatsMod, ChipStackSVG, PLAYER_COLORS, G, SV, BR, DIM, MED, PL, RVLI, HandRankModal, buildPots, PotDetailModal } from './UI';
+import { Btn, Card, Ov, DB, HoleCard, CommCard, getCommunityCards, CDlg, SSDlg, HRDlg, StatsMod, ChipStackSVG, PLAYER_COLORS, G, SV, BR, DIM, MED, PL, RVLI, HandRankModal, buildPots, PotDetailModal, HandHistoryModal } from './UI';
 
 // Equal-angular ellipse spacing — local player always at bottom (90°), others arc clockwise.
 function getSeatPositions(n) {
@@ -47,6 +47,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
     const [showHomeDlg, setShowHomeDlg] = useState(false);
     const [showUndoDlg, setShowUndoDlg] = useState(false);
     const [showHandRank, setShowHandRank] = useState(false);
+    const [showHandHistory, setShowHandHistory] = useState(false);
     const [showCumulative, setShowCumulative] = useState(false);
     const [confirmingAllIn, setConfirmingAllIn] = useState(false);
     const [showPotModal, setShowPotModal] = useState(false);
@@ -200,6 +201,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                 {/* ── Modals and overlays (unchanged) ─────────────────────── */}
                 {showStats && <StatsMod hist={history} pls={players} scores={scores} onClose={()=>setShowStats(false)}/>}
                 {showHandRank && <HandRankModal onClose={()=>setShowHandRank(false)}/>}
+                {showHandHistory && <HandHistoryModal history={history} currentSn={sn} onClose={()=>setShowHandHistory(false)}/>}
                 {showPotModal && hasMultiplePots && <PotDetailModal pots={effectivePots} players={players} onClose={()=>setShowPotModal(false)}/>}
                 {cdlg && <CDlg d={cdlg} onClose={()=>setCdlg(null)} onConfirm={doConfirm}/>}
                 {hrd && <HRDlg d={hrd} onSelect={hr=>{const w=hrd.wi;setHrd(null);finalWin(w,hr);}} setTier={t=>setHrd({...hrd,tier:t})} onSkip={()=>{const w=hrd.wi;setHrd(null);finalWin(w,null);}}/>}
@@ -251,6 +253,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                         {isHost && <button onClick={()=>setShowUndoDlg(true)} style={{background:'rgba(255,255,255,0.10)',border:'1px solid rgba(255,255,255,0.30)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>↩️</button>}
                         {isHost && <button onClick={()=>socket.emit('save_game',(res)=>{if(res.success)alert('Game saved! ID: '+res.saveId);else alert('Save failed: '+res.message);})} style={{background:'rgba(100,180,100,0.14)',border:'1px solid rgba(100,180,100,0.36)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>💾</button>}
                         <button onClick={()=>setShowHandRank(true)} style={{background:'rgba(240,192,64,0.12)',border:'1px solid rgba(240,192,64,0.32)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>🃏</button>
+                        <button onClick={()=>setShowHandHistory(true)} style={{background:'rgba(240,192,64,0.20)',border:'1px solid rgba(240,192,64,0.45)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>📈</button>
                         <button onClick={()=>setShowStats(true)} style={{background:'rgba(240,192,64,0.20)',border:'1px solid rgba(240,192,64,0.45)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>📊</button>
                     </div>
                 </div>

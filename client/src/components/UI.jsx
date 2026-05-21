@@ -345,4 +345,49 @@ function PotDetailModal({ pots, players, onClose }) {
     </DB></Ov>
   );
 }
-export { HoleCard, CommCard, getCommunityCards, AnimatedPot, AnimatedSidePot, CDlg, SSDlg, HRDlg, StatsMod, ChipStackSVG, buildPots, HandRankModal, PotDetailModal };
+function HandHistoryModal({ history, currentSn, onClose }) {
+    const sessionHistory = (history || []).filter(h => h.sn === currentSn);
+    return (
+        <Ov><DB>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+                <span style={{color:G, fontWeight:800, fontSize:15}}>📈 Session {currentSn} — Hand History</span>
+                <Btn sm bg="#333" onClick={onClose}>✕</Btn>
+            </div>
+            {!sessionHistory.length ? (
+                <p style={{color:DIM, fontSize:13, margin:0}}>No hands completed yet this session.</p>
+            ) : (
+                <div style={{maxHeight:'66vh', overflowY:'auto', display:'flex', flexDirection:'column', gap:6}}>
+                    {sessionHistory.map(h => {
+                        const participantIds = Object.keys(h.stacks || {});
+                        return (
+                            <div key={h.hn} style={{background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:10, padding:'8px 10px'}}>
+                                <div style={{fontSize:10, fontWeight:800, color:DIM, letterSpacing:1, textTransform:'uppercase', marginBottom:5}}>
+                                    Hand {h.hn}{h.hr ? <span style={{fontWeight:600, marginLeft:6}}>— {h.hr}</span> : ''}
+                                </div>
+                                <div style={{display:'flex', flexDirection:'column', gap:2}}>
+                                    {participantIds.map(pid => {
+                                        const isWinner = pid === h.wid;
+                                        const name = (h.playerNames && h.playerNames[pid]) || '?';
+                                        const stack = h.stacks[pid] ?? null;
+                                        const delta = h.net ? (h.net[pid] ?? null) : null;
+                                        const deltaStr = delta > 0 ? `+${delta}` : delta < 0 ? `${delta}` : '±0';
+                                        return (
+                                            <div key={pid} style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', fontSize:12, color: isWinner ? G : 'rgba(255,255,255,0.65)'}}>
+                                                <span style={{fontWeight: isWinner ? 700 : 400}}>{name}</span>
+                                                <span style={{fontVariantNumeric:'tabular-nums'}}>
+                                                    {stack !== null ? stack : '—'}
+                                                    {delta !== null && <span style={{fontSize:10, marginLeft:4, opacity:0.75}}>({deltaStr})</span>}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </DB></Ov>
+    );
+}
+export { HoleCard, CommCard, getCommunityCards, AnimatedPot, AnimatedSidePot, CDlg, SSDlg, HRDlg, StatsMod, ChipStackSVG, buildPots, HandRankModal, PotDetailModal, HandHistoryModal };

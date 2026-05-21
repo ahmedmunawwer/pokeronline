@@ -214,6 +214,10 @@ module.exports = function(io) {
                 const net = {};
                 const baseStacks = gs.stacksBefore || stacksBefore;
                 gs.players.forEach(p => { net[p.id] = p.stack - (baseStacks[p.id] || 0); });
+                const stacks = {};
+                gs.players.forEach(p => { stacks[p.id] = p.stack; });
+                const playerNames = {};
+                gs.players.forEach(p => { playerNames[p.id] = p.name; });
                 const wiPlayer = gs.wi ? gs.players.find(p => p.name === gs.wi.name) : null;
                 const histRecord = {
                     sn: gs.sn,
@@ -222,6 +226,8 @@ module.exports = function(io) {
                     wname: gs.wi ? gs.wi.name : null,
                     hr: gs.wi ? gs.wi.hr : null,
                     net: net,
+                    stacks: stacks,
+                    playerNames: playerNames,
                     acts: gs.curActs || []
                 };
                 if (!gs.history) gs.history = [];
@@ -588,6 +594,8 @@ module.exports = function(io) {
                     gs.history.forEach(h => {
                         if (h.wid === oldId) h.wid = socket.id;
                         if (h.net && h.net[oldId] !== undefined) { h.net[socket.id] = h.net[oldId]; delete h.net[oldId]; }
+                        if (h.stacks && h.stacks[oldId] !== undefined) { h.stacks[socket.id] = h.stacks[oldId]; delete h.stacks[oldId]; }
+                        if (h.playerNames && h.playerNames[oldId] !== undefined) { h.playerNames[socket.id] = h.playerNames[oldId]; delete h.playerNames[oldId]; }
                     });
                 }
 
