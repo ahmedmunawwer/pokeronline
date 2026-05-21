@@ -18,6 +18,8 @@ const io = new Server(server, {
 
 require('./socketEvents')(io);
 
+app.get('/healthz', (req, res) => res.status(200).send('ok'));
+
 // Serve static frontend
 app.use(express.static(path.join(__dirname, '../client/dist')));
 app.get('/{*splat}', (req, res) => {
