@@ -3,15 +3,20 @@ const RV = {"High Card":1,"One Pair":2,"Two Pair":3,"Three of a Kind":4,"Straigh
 const NP = { preflop: "flop_reveal", flop: "turn_reveal", turn: "river_reveal", river: "showdown" };
 
 function calcSPts(sortedPlayers) {
+    const n = sortedPlayers.length;
+    const base = sortedPlayers.map((_, i) => n - 1 - i);
     const pts = {};
-    const count = sortedPlayers.length;
-    sortedPlayers.forEach((p, i) => {
-        let pVal = 0;
-        if (i === 0) pVal = count * 2;
-        else if (i === 1) pVal = count;
-        else if (i === 2 && count > 3) pVal = Math.floor(count / 2);
-        pts[p.id] = pVal;
-    });
+    let i = 0;
+    while (i < n) {
+        let j = i;
+        while (j < n && sortedPlayers[j].stack === sortedPlayers[i].stack) j++;
+        const tieCount = j - i;
+        let sum = 0;
+        for (let k = i; k < j; k++) sum += base[k];
+        const shared = Math.round(sum / tieCount);
+        for (let k = i; k < j; k++) pts[sortedPlayers[k].id] = shared;
+        i = j;
+    }
     return pts;
 }
 
