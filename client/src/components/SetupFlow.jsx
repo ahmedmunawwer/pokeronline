@@ -8,8 +8,8 @@ export default function SetupFlow({ lobbyState, onLeave }) {
 
     // Configuring State (Host only)
     const [globalStack, setGlobalStack] = useState("1000");
-    const [sbVal, setSbVal] = useState("5");
-    const [bbVal, setBbVal] = useState("10");
+    const [sbVal, setSbVal] = useState("50");
+    const [bbVal, setBbVal] = useState("100");
     const [sessVal, setSessVal] = useState("3");
     const [indivStacks, setIndivStacks] = useState({});
 
