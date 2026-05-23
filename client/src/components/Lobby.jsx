@@ -146,7 +146,7 @@ export default function Lobby({ onJoined }) {
     const handleJoinNameChange = (e) => {
         const val = e.target.value;
         setJoinName(val);
-        if (existingNames.some(n => n.toLowerCase() === val.trim().toLowerCase())) {
+        if (joinCode.length !== 2 && existingNames.some(n => n.toLowerCase() === val.trim().toLowerCase())) {
             setNameError("Name already taken — choose another");
         } else {
             setNameError("");
@@ -278,7 +278,7 @@ export default function Lobby({ onJoined }) {
                                             borderRadius:12, padding:"12px 14px", cursor:"pointer", textAlign:"left", color:"#fff"
                                         }}>
                                             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                                                <span style={{fontWeight:700,fontSize:14}}>Hand #{s.handNumber} · Session {s.sessionNumber}</span>
+                                                <span style={{fontWeight:700,fontSize:14}}>{s.saveId === 'autosave' ? '⚡ Autosave · ' : ''}Hand #{s.handNumber} · Session {s.sessionNumber}</span>
                                                 <span style={{color:DIM,fontSize:11}}>{formatDate(s.savedAt)}</span>
                                             </div>
                                             <div style={{color:DIM,fontSize:12}}>

@@ -1,6 +1,8 @@
 const roomManager = require('./roomManager');
 const saveManager = require('./saveManager');
 
+const AUTOSAVE_PHASES = new Set(['preflop_start', 'flop_reveal', 'turn_reveal', 'river_reveal']);
+
 const DEALER_CEREMONY_PHASES = new Set([
     'preflop_start', 'flop_reveal', 'turn_reveal', 'river_reveal',
     'showdown', 'end', 'session_end'
@@ -166,6 +168,7 @@ module.exports = function(io) {
                 startHand(liveRoom.gameState);
                 io.to(socket.currentRoom).emit('lobby_update', liveRoom);
                 io.to(socket.currentRoom).emit('game_state_update', liveRoom.gameState);
+                saveManager.saveAutosave(liveRoom.gameState, liveRoom.players);
             }, 5000);
         });
 
@@ -235,22 +238,9 @@ module.exports = function(io) {
             }
 
             io.to(socket.currentRoom).emit('game_state_update', gs);
-            // Auto-save after every action
-            try {
-                const fs = require('fs');
-                const path = require('path');
-                const autoSavePath = path.join(__dirname, '..', 'saves', `auto_${socket.currentRoom}.json`);
-                const stateCopy = JSON.parse(JSON.stringify(gs));
-                delete stateCopy.confirmations;
-                fs.writeFileSync(autoSavePath, JSON.stringify({
-                    savedAt: new Date().toISOString(),
-                    playerNames: room.players.map(p => p.name),
-                    playerCount: room.players.length,
-                    gameState: stateCopy,
-                    handNumber: gs.hn,
-                    sessionNumber: gs.sn
-                }, null, 2));
-            } catch (_) { /* silently ignore save errors */ }
+            if (AUTOSAVE_PHASES.has(gs.phase) && !AUTOSAVE_PHASES.has(phaseBefore)) {
+                saveManager.saveAutosave(gs, room.players);
+            }
         });
 
         socket.on('confirm_result', () => {
