@@ -29,6 +29,26 @@ function saveGame(gameState, roomPlayers) {
     return saveId;
 }
 
+function saveAutosave(gameState, roomPlayers) {
+    const stateCopy = JSON.parse(JSON.stringify(gameState));
+    delete stateCopy.confirmations;
+
+    const saveData = JSON.stringify({
+        saveId: 'autosave',
+        savedAt: new Date().toISOString(),
+        playerNames: roomPlayers.map(p => p.name),
+        playerCount: roomPlayers.length,
+        gameState: stateCopy,
+        handNumber: gameState.hn,
+        sessionNumber: gameState.sn
+    }, null, 2);
+
+    const filePath = path.join(SAVE_DIR, 'save_autosave.json');
+    fs.writeFile(filePath, saveData, (err) => {
+        if (err) console.error('[autosave] write failed:', err.message);
+    });
+}
+
 function listSaves() {
     if (!fs.existsSync(SAVE_DIR)) return [];
     const files = fs.readdirSync(SAVE_DIR).filter(f => f.startsWith('save_') && f.endsWith('.json'));
@@ -105,6 +125,8 @@ function remapPlayerIds(gameState, nameToNewId) {
     if (gameState.history) {
         gameState.history = gameState.history.map(h => ({
             ...h,
+            stacks: h.stacks ? Object.fromEntries(Object.entries(h.stacks).map(([id, v]) => [idMap[id] || id, v])) : {},
+            playerNames: h.playerNames ? Object.fromEntries(Object.entries(h.playerNames).map(([id, v]) => [idMap[id] || id, v])) : {},
             net: h.net ? Object.fromEntries(Object.entries(h.net).map(([id, v]) => [idMap[id] || id, v])) : {},
             acts: (h.acts || []).map(a => ({ ...a, id: idMap[a.id] || a.id }))
         }));
@@ -127,4 +149,4 @@ function remapPlayerIds(gameState, nameToNewId) {
     }
 }
 
-module.exports = { saveGame, listSaves, loadSave, remapPlayerIds };
+module.exports = { saveGame, saveAutosave, listSaves, loadSave, remapPlayerIds };
