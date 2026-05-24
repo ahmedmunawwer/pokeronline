@@ -38,6 +38,7 @@ function App() {
   const [hostEnded, setHostEnded] = useState(false);
   const [leaveDialog, setLeaveDialog] = useState(null);
   const [reconnecting, setReconnecting] = useState(false);
+  const [stallInfo, setStallInfo] = useState(null);
 
   useEffect(() => {
     const saved = getSavedSession();
@@ -70,12 +71,14 @@ function App() {
     const handleLobbyUpdate = (room) => setLobbyState(room);
     const handleRoomError = (msg) => { alert(msg); setRoomCode(null); };
     const handleHostEnded = () => setHostEnded(true);
+    const handleGameStalled = (data) => setStallInfo(data);
 
     socket.on('connect', handleConnect);
     socket.on('game_state_update', handleGameUpdate);
     socket.on('lobby_update', handleLobbyUpdate);
     socket.on('room_error', handleRoomError);
     socket.on('game_ended_by_host', handleHostEnded);
+    socket.on('game_stalled', handleGameStalled);
     document.addEventListener('visibilitychange', handleVisibility);
 
     if (socket.connected) handleConnect();
@@ -86,6 +89,7 @@ function App() {
       socket.off('lobby_update', handleLobbyUpdate);
       socket.off('room_error', handleRoomError);
       socket.off('game_ended_by_host', handleHostEnded);
+      socket.off('game_stalled', handleGameStalled);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
@@ -131,24 +135,32 @@ function App() {
   const isHost = lobbyState?.hostId === socket.id;
   const inGame = lobbyState?.setupPhase === 'in_game';
 
-  const clearRoom = () => { setLeaveDialog(null); setRoomCode(null); setLobbyState(null); setGameState(null); clearSession(); };
+  const clearRoom = () => { setStallInfo(null); setLeaveDialog(null); setRoomCode(null); setLobbyState(null); setGameState(null); clearSession(); };
 
   const handleLeaveClick = () => {
-    if (isHost) {
+    if (inGame) {
+      const gameOver = gameState &&
+        (gameState.phase === 'end' || gameState.phase === 'session_end') &&
+        gameState.sn >= gameState.cfg?.sessions;
+      if (gameOver) {
+        socket.emit('restart_leave');
+        clearRoom();
+      } else {
+        setLeaveDialog({
+          title: 'Leave game?',
+          body: 'This will stall the game for all other players. They will need to restart from the Load Game menu using the ⚡ Autosave slot.',
+          confirmLabel: 'Leave',
+          confirmBg: '#7a1a1a',
+          onConfirm: () => socket.emit('player_leave', clearRoom),
+        });
+      }
+    } else if (isHost) {
       setLeaveDialog({
         title: 'End the room for everyone?',
         body: 'All players will be kicked out and the room will be deleted.',
         confirmLabel: 'Yes, end it',
         confirmBg: '#7a1a1a',
         onConfirm: () => socket.emit('host_end_game', { save: false }, clearRoom),
-      });
-    } else if (inGame) {
-      setLeaveDialog({
-        title: 'Leave the game?',
-        body: "You'll be marked inactive for the rest of this session and any following sessions in this room. Your remaining chips stay on the table.",
-        confirmLabel: 'Yes, leave',
-        confirmBg: '#7a1a1a',
-        onConfirm: () => socket.emit('player_leave_game', (res) => { if (res.success) clearRoom(); }),
       });
     } else {
       setLeaveDialog({
@@ -163,7 +175,7 @@ function App() {
 
   return (
     <div className="app-shell" style={{minHeight:'100vh',background:'radial-gradient(circle at center, #3e2723 0%, #1a0f0a 100%)',color:'#fff',padding:'12px 14px',fontFamily:"'Segoe UI',sans-serif",boxSizing:'border-box'}}>
-      <div className="app-header-bar" style={{maxWidth:460,margin:'0 auto',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,background:'rgba(0,0,0,0.4)',padding:'10px 15px',borderRadius:12,border:'1px solid rgba(240,192,64,0.3)'}}>
+      <div className="app-header-bar" style={{maxWidth:460,margin:'0 auto',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,background:'rgba(0,0,0,0.4)',padding:'10px 15px',borderRadius:12,border:'1px solid rgba(240,192,64,0.3)',position:'relative',zIndex:2000}}>
         <div style={{display:'flex',alignItems:'center',gap:14}}>
           {myPlayer && (
             <div style={{display:'flex',alignItems:'center',gap:5}}>
@@ -180,6 +192,16 @@ function App() {
         <button onClick={handleLeaveClick} style={{background:'rgba(211,47,47,0.2)',border:'1px solid rgba(211,47,47,0.5)',color:'#ff8a80',padding:'6px 12px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer'}}>Leave</button>
       </div>
       {leaveDialog && <ConfirmDialog title={leaveDialog.title} body={leaveDialog.body} confirmLabel={leaveDialog.confirmLabel} confirmBg={leaveDialog.confirmBg} onConfirm={leaveDialog.onConfirm} onCancel={() => setLeaveDialog(null)} />}
+
+      {stallInfo && (
+        <div style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+          <div style={{maxWidth:360,width:'100%',background:'linear-gradient(160deg,rgba(30,18,10,0.98) 0%,rgba(10,5,0,0.99) 100%)',border:'1px solid rgba(240,192,64,0.25)',borderRadius:16,padding:'28px 24px',textAlign:'center',boxShadow:'0 8px 40px rgba(0,0,0,0.7)'}}>
+            <p style={{color:'#f0c040',fontWeight:800,fontSize:17,margin:'0 0 10px'}}>Game stalled — {stallInfo.leftBy} left</p>
+            <p style={{color:'rgba(255,255,255,0.5)',fontSize:13,margin:'0 0 22px',lineHeight:1.5}}>You can restart this game from the ⚡ Autosave slot in the Load Game menu.</p>
+            <button onClick={clearRoom} style={{width:'100%',padding:'11px 0',background:'#f0c040',color:'#1a0f0a',border:'none',borderRadius:10,fontWeight:800,fontSize:14,cursor:'pointer'}}>Return to Home</button>
+          </div>
+        </div>
+      )}
 
       {lobbyState.setupPhase !== 'in_game' ? (
         <SetupFlow lobbyState={lobbyState} onLeave={() => { socket.emit('leave_room'); clearRoom(); }} />

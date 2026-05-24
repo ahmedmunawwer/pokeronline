@@ -52,6 +52,13 @@ function resolveLeaveImpact(gs) {
     }
 }
 
+function rejectIfStalled(socket, room, callback) {
+    if (!room || !room.stalled) return false;
+    socket.emit('game_stalled', { leftBy: room.stalledBy });
+    if (callback) callback({ success: false });
+    return true;
+}
+
 module.exports = function(io) {
     io.on('connection', (socket) => {
         
@@ -106,12 +113,15 @@ module.exports = function(io) {
         socket.on('get_default_name', (roomCode, callback) => {
             const room = roomManager.getRoom(roomCode);
             if (!room) {
-                callback({ name: "Joinee 1", existingNames: [] });
+                callback({ existingNames: [] });
                 return;
             }
-            room.joineeCounter = (room.joineeCounter || 0) + 1;
+            if (room.isLoaded) {
+                callback({ expectedNames: room.expectedNames });
+                return;
+            }
             const existingNames = room.players.map(p => p.name);
-            callback({ name: "Joinee " + room.joineeCounter, existingNames });
+            callback({ existingNames });
         });
 
         socket.on('set_ready', (ready) => {
@@ -132,6 +142,7 @@ module.exports = function(io) {
         socket.on('start_countdown', (settings) => {
             if (!socket.currentRoom) return;
             const room = roomManager.getRoom(socket.currentRoom);
+            if (rejectIfStalled(socket, room)) return;
             if (!room || room.hostId !== socket.id) return;
 
             room.setupPhase = 'countdown';
@@ -175,6 +186,7 @@ module.exports = function(io) {
         socket.on('player_action', (data) => {
             if (!socket.currentRoom) return;
             const room = roomManager.getRoom(socket.currentRoom);
+            if (rejectIfStalled(socket, room)) return;
             if (!room) return;
 
             const { processAction } = require('./gameEngine');
@@ -246,6 +258,7 @@ module.exports = function(io) {
         socket.on('confirm_result', () => {
             if (!socket.currentRoom) return;
             const room = roomManager.getRoom(socket.currentRoom);
+            if (rejectIfStalled(socket, room)) return;
             if (!room) return;
             const gs = room.gameState;
             if (!gs.confirmations) gs.confirmations = [];
@@ -258,6 +271,7 @@ module.exports = function(io) {
         socket.on('dissent_result', () => {
             if (!socket.currentRoom) return;
             const room = roomManager.getRoom(socket.currentRoom);
+            if (rejectIfStalled(socket, room)) return;
             if (!room) return;
             const gs = room.gameState;
             gs.confirmations = [];
@@ -319,6 +333,7 @@ module.exports = function(io) {
         socket.on('host_end_game', (data, callback) => {
             if (!socket.currentRoom) return callback && callback({ success: false });
             const room = roomManager.getRoom(socket.currentRoom);
+            if (rejectIfStalled(socket, room, callback)) return;
             if (!room || room.hostId !== socket.id) return callback && callback({ success: false });
 
             const roomCode = socket.currentRoom;
@@ -348,6 +363,7 @@ module.exports = function(io) {
         socket.on('save_game', (callback) => {
             if (!socket.currentRoom) return callback({ success: false, message: 'Not in a room' });
             const room = roomManager.getRoom(socket.currentRoom);
+            if (rejectIfStalled(socket, room, callback)) return;
             if (!room || room.hostId !== socket.id) return callback({ success: false, message: 'Only host can save' });
             try {
                 const saveId = saveManager.saveGame(room.gameState, room.players);
@@ -440,6 +456,7 @@ module.exports = function(io) {
         socket.on('restart_toggle', () => {
             if (!socket.currentRoom) return;
             const room = roomManager.getRoom(socket.currentRoom);
+            if (rejectIfStalled(socket, room)) return;
             if (!room) return;
             const gs = room.gameState;
             if (!gs.restartApprovals) gs.restartApprovals = [];
@@ -464,6 +481,7 @@ module.exports = function(io) {
         socket.on('restart_confirm', () => {
             if (!socket.currentRoom) return;
             const room = roomManager.getRoom(socket.currentRoom);
+            if (rejectIfStalled(socket, room)) return;
             if (!room || room.hostId !== socket.id) return;
             const gs = room.gameState;
             if (!gs.restartHostConfirming) return;
@@ -512,6 +530,48 @@ module.exports = function(io) {
             socket.currentRoom = null;
             io.to(roomCode).emit('lobby_update', room);
             io.to(roomCode).emit('game_state_update', gs);
+        });
+
+        socket.on('player_leave', (callback) => {
+            if (!socket.currentRoom) return callback && callback({ success: false });
+            const room = roomManager.getRoom(socket.currentRoom);
+            if (!room) return callback && callback({ success: false });
+
+            const gs = room.gameState;
+            const roomCode = socket.currentRoom;
+
+            // Game already over — normal leave, no stall
+            const gameOver = gs &&
+                (gs.phase === 'end' || gs.phase === 'session_end') &&
+                gs.sn >= gs.cfg.sessions;
+            if (gameOver) {
+                roomManager.markPlayerInactive(roomCode, socket.id);
+                socket.leave(roomCode);
+                socket.currentRoom = null;
+                io.to(roomCode).emit('lobby_update', room);
+                if (callback) callback({ success: true });
+                return;
+            }
+
+            // Room already stalled — clean up this socket and re-broadcast stall
+            if (room.stalled) {
+                socket.leave(roomCode);
+                socket.currentRoom = null;
+                socket.emit('game_stalled', { leftBy: room.stalledBy });
+                if (callback) callback({ success: true });
+                return;
+            }
+
+            // Live game — stall the room
+            const leaverPlayer = gs ? gs.players.find(p => p.id === socket.id) : null;
+            const leftBy = leaverPlayer ? leaverPlayer.name : 'A player';
+
+            room.stalled = true;
+            room.stalledBy = leftBy;
+            socket.leave(roomCode);
+            socket.currentRoom = null;
+            if (callback) callback({ success: true });
+            io.to(roomCode).emit('game_stalled', { leftBy });
         });
 
         socket.on('disconnect', () => {
@@ -613,6 +673,13 @@ module.exports = function(io) {
             // Re-join the socket room (disconnect auto-leaves)
             socket.join(data.roomCode);
             socket.currentRoom = data.roomCode;
+
+            // Stalled room — send stall modal instead of normal game sync
+            if (room.stalled) {
+                socket.emit('game_stalled', { leftBy: room.stalledBy });
+                callback({ success: true, playerId, inGame: room.setupPhase === 'in_game' });
+                return;
+            }
 
             // Sync state back — always send both so client knows where it is
             socket.emit('lobby_update', room);

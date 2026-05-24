@@ -38,7 +38,6 @@ function createRoom(preferredCode) {
         setupPhase: 'waiting', // waiting, configuring, countdown, in_game
         players: [], // { id, name, ready, stack, isHost }
         sockets: new Set(),
-        joineeCounter: 0,
         gameState: {
             phase: "lobby", // "lobby", "menu" (setup), "preflop", etc.
             players: [],
