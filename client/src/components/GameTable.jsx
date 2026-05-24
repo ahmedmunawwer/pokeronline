@@ -44,7 +44,6 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
     const [sseld, setSseld] = useState(null);
     const [ssel, setSsel] = useState([]);
     const [goView, setGoView] = useState("main");
-    const [showHomeDlg, setShowHomeDlg] = useState(false);
     const [showUndoDlg, setShowUndoDlg] = useState(false);
     const [showHandRank, setShowHandRank] = useState(false);
     const [showHandHistory, setShowHandHistory] = useState(false);
@@ -96,15 +95,6 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
     const finalWin = (w, hr) => { emitAction('award_win', null, {wid: w, hr}); };
     const nextSession = () => emitAction('next_session');
 
-    const handleHome = () => { setShowHomeDlg(true); };
-    const doEndGame = (save) => {
-        setShowHomeDlg(false);
-        socket.emit('host_end_game', { save }, () => { if (onLeave) onLeave(); });
-    };
-    const doLeave = () => {
-        setShowHomeDlg(false);
-        socket.emit('player_leave_game', (res) => { if (res.success && onLeave) onLeave(); });
-    };
     const handleUndo = () => emitAction('undo');
 
     const gameOver = (phase === "end" || phase === "session_end") && sn >= cfg.sessions;
@@ -207,17 +197,6 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                 {hrd && <HRDlg d={hrd} onSelect={hr=>{const w=hrd.wi;setHrd(null);finalWin(w,hr);}} setTier={t=>setHrd({...hrd,tier:t})} onSkip={()=>{const w=hrd.wi;setHrd(null);finalWin(w,null);}}/>}
                 {sseld && <SSDlg d={sseld} sel={ssel} setSel={setSsel} onClose={()=>{setSseld(null);setSsel([]);}} onSplit={(e,a,l)=>{const names=e.map(x=>x.name).join(" & ");setSseld(null);setSsel([]);setCdlg({type:"split",eligible:e,amt:a,label:l,names});}}/>}
 
-                {showHomeDlg && isHost && <Ov><DB><div style={{textAlign:'center'}}>
-                  <div style={{fontSize:36,marginBottom:10}}>💾</div>
-                  <p style={{color:G,fontWeight:800,fontSize:17,margin:'0 0 8px'}}>End the room for everyone?</p>
-                  <p style={{color:DIM,fontSize:13,margin:'0 0 20px'}}>This will end the game for all players.</p>
-                  <div style={{display:'flex',gap:10}}>
-                    <Btn full bg="#1a7a40" onClick={()=>doEndGame(true)}>Save & Leave</Btn>
-                    <Btn full bg="#7a1a1a" onClick={()=>doEndGame(false)}>Leave No Save</Btn>
-                  </div>
-                  <div style={{marginTop:10}}><Btn full bg="rgba(255,255,255,0.1)" onClick={()=>setShowHomeDlg(false)}>Cancel</Btn></div>
-                </div></DB></Ov>}
-                {showHomeDlg && !isHost && <ConfirmDialog title="Leave the game?" body="You'll be marked inactive for the rest of this session and any following sessions in this room. Your remaining chips stay on the table." confirmLabel="Yes, leave" confirmBg="#7a1a1a" onConfirm={doLeave} onCancel={()=>setShowHomeDlg(false)} />}
                 {showUndoDlg && <ConfirmDialog title="Undo last action?" body="This will roll back the most recent move. All players will see the change." confirmLabel="Yes, undo" confirmBg="#b8680e" onConfirm={()=>{ setShowUndoDlg(false); handleUndo(); }} onCancel={()=>setShowUndoDlg(false)} />}
 
                 {/* ── Header ──────────────────────────────────────────────── */}
@@ -249,7 +228,6 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                         </div>
                     </div>
                     <div style={{display:'flex', gap:6, alignItems:'center', flexShrink:0}}>
-                        <button onClick={handleHome} style={{background:'rgba(255,100,100,0.10)',border:'1px solid rgba(255,100,100,0.30)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>🏠</button>
                         {isHost && <button onClick={()=>setShowUndoDlg(true)} style={{background:'rgba(255,255,255,0.10)',border:'1px solid rgba(255,255,255,0.30)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>↩️</button>}
                         {isHost && <button onClick={()=>socket.emit('save_game',(res)=>{if(res.success)alert('Game saved! ID: '+res.saveId);else alert('Save failed: '+res.message);})} style={{background:'rgba(100,180,100,0.14)',border:'1px solid rgba(100,180,100,0.36)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>💾</button>}
                         <button onClick={()=>setShowHandRank(true)} style={{background:'rgba(240,192,64,0.12)',border:'1px solid rgba(240,192,64,0.32)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>🃏</button>
