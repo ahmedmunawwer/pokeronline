@@ -128,6 +128,17 @@ function addAct(state, id, type, amt) {
     state.curActs = [...state.curActs, { id, type, amt }];
 }
 
+function makeBetLabel(rc) {
+    if (rc === 0) return "bet";
+    if (rc === 1) return "raise";
+    if (rc === 2) return "re-raise";
+    return (rc + 1) + "-bet";
+}
+
+function chainStr(chain) {
+    return "$" + chain.join("→$");
+}
+
 function advance(state, nq, pls, ph2, hcN, aiN, rbN) {
     const alive = nq.filter(i => !pls[i].folded && pls[i].stack > 0);
     if (!alive.length) {
@@ -161,7 +172,10 @@ function advance(state, nq, pls, ph2, hcN, aiN, rbN) {
         state.curBet = 0;
         if (state.cfg) state.lr = state.cfg.bb;
         state.ba = "Bet";
-        
+        state.raiseCount = 0;
+        state.rChain = [];
+        state.lastBetInfo = null;
+
         const nxt = NP[ph2];
         state.phase = nxt;
         
@@ -233,9 +247,9 @@ function processAction(state, actionObj) {
         state.hc = nHC;
         if (isAI) {
             state.ai = nAI;
-            addLog(state, state.players[i].name + " calls ALL IN! (" + amt + ")");
+            addLog(state, state.players[i].name + " calls $" + amt + (state.lastBetInfo ? " (" + state.lastBetInfo.name + "'s " + state.lastBetInfo.label + ")" : "") + " (ALL IN)");
         } else {
-            addLog(state, state.players[i].name + " calls " + amt);
+            addLog(state, state.players[i].name + " calls $" + amt + (state.lastBetInfo ? " (" + state.lastBetInfo.name + "'s " + state.lastBetInfo.label + ")" : ""));
         }
         
         advance(state, state.queue.slice(1).filter(j => !np[j].folded && np[j].stack > 0), np, state.phase, nHC, nAI, nRB);
@@ -274,8 +288,11 @@ function processAction(state, actionObj) {
         
         const nba = state.ba === "Bet" ? "Raise" : "Re-raise";
         state.ba = nba;
-        addLog(state, state.players[i].name + " " + state.ba.toLowerCase() + "s +" + ra2 + " → " + actual + (isAI ? " (ALL IN!)" : ""));
-        
+        state.rChain = [...state.rChain, actual];
+        state.lastBetInfo = { name: state.players[i].name, label: makeBetLabel(state.raiseCount) };
+        state.raiseCount++;
+        addLog(state, state.players[i].name + " " + state.lastBetInfo.label + "s" + (state.rChain.length > 1 ? " to " : " ") + chainStr(state.rChain) + (isAI ? " (ALL IN)" : ""));
+
         const nq = [];
         const n = np.length;
         for (let k = 1; k < n; k++) {
@@ -304,8 +321,6 @@ function processAction(state, actionObj) {
         state.hc = nHC;
         state.ai = nAI;
         
-        addLog(state, state.players[i].name + " ALL IN! (" + ac + ")");
-        
         if (actual > state.curBet) {
             const r2 = actual - state.curBet;
             state.curBet = actual;
@@ -314,7 +329,11 @@ function processAction(state, actionObj) {
                 state.lfb = actual;
             }
             state.ba = state.ba === "Bet" ? "Raise" : "Re-raise";
-            
+            state.rChain = [...state.rChain, actual];
+            state.lastBetInfo = { name: state.players[i].name, label: makeBetLabel(state.raiseCount) };
+            state.raiseCount++;
+            addLog(state, state.players[i].name + " " + state.lastBetInfo.label + "s" + (state.rChain.length > 1 ? " to " : " ") + chainStr(state.rChain) + " (ALL IN)");
+
             const nq = [];
             const n = np.length;
             for (let k = 1; k < n; k++) {
@@ -323,6 +342,7 @@ function processAction(state, actionObj) {
             }
             advance(state, nq, np, state.phase, nHC, nAI, nRB);
         } else {
+            addLog(state, state.players[i].name + " calls $" + ac + (state.lastBetInfo ? " (" + state.lastBetInfo.name + "'s " + state.lastBetInfo.label + ")" : "") + " (ALL IN)");
             advance(state, state.queue.slice(1).filter(j => !np[j].folded && np[j].stack > 0), np, state.phase, nHC, nAI, nRB);
         }
     } else if (action === 'reveal') {
@@ -332,6 +352,9 @@ function processAction(state, actionObj) {
             state.rBets = {};
             state.curBet = 0;
             state.ba = "Bet";
+            state.raiseCount = 0;
+            state.rChain = [];
+            state.lastBetInfo = null;
             if (state.cfg) {
                 state.lr = state.cfg.bb;
                 state.lfb = 0;
@@ -339,6 +362,9 @@ function processAction(state, actionObj) {
         } else {
             // Pre-flop: Blinds are already in rBets from startHand
             state.ba = "Raise";
+            state.raiseCount = 1;
+            state.rChain = [state.cfg.bb];
+            state.lastBetInfo = null;
         }
         
         state.phase = bp;
@@ -613,7 +639,10 @@ function startHand(state) {
     state.pi = 0;
     state.curActs = [];
     state.ba = "Raise";
-    
+    state.raiseCount = 1;
+    state.rChain = [c.bb];
+    state.lastBetInfo = null;
+
     state.log = [
         "BB: " + (pls[bi] ? pls[bi].name : "None") + " (" + ba2 + ")", 
         "SB: " + (pls[si] ? pls[si].name : "None") + " (" + sa + ")", 
