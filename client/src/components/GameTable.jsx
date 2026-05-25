@@ -854,6 +854,7 @@ function classifyAction(line) {
     const lc = line.toLowerCase();
     if (lc.includes('all in'))   return 'allin';
     if (lc.includes('re-raise')) return 'reraise';
+    if (/\d+-bet/.test(lc))      return 'reraise';
     if (lc.includes('raise'))    return 'raise';
     if (lc.includes('bet'))      return 'bet';
     if (lc.includes('call'))     return 'call';
@@ -869,10 +870,11 @@ function LastActionPanel({ log }) {
     const tone = classifyAction(last);
     const s = TONE_STYLES[tone] || TONE_STYLES.idle;
 
-    const m = last && last.match(/^([A-Z][a-zA-Z]+)\s+(\w+)(?:\s+(?:to\s+)?([\d,]+))?/);
+    const m = last && last.match(/^([A-Z][a-zA-Z]+)\s+(\w[\w-]*)\s*(?:to\s+)?(\$[\d,→$]+)?\s*(\([^)]*'s[^)]*\))?/);
     const who  = m ? m[1] : null;
     const verb = m ? m[2] : (last || '—');
     const amt  = m ? m[3] : null;
+    const ctx  = m ? m[4] : null;
 
     return (
         <div style={{
@@ -892,6 +894,7 @@ function LastActionPanel({ log }) {
             <div style={{display:'flex', alignItems:'baseline', gap:6, fontSize:15, fontWeight:800, color:'#fff', letterSpacing:0.2, lineHeight:1.2}}>
                 {who  && <span style={{color:'#fff'}}>{who}</span>}
                 <span style={{color:s.accent, textTransform:'lowercase'}}>{verb}</span>
+                {ctx  && <span style={{color:'rgba(255,255,255,0.40)', fontSize:11, fontWeight:600, letterSpacing:0.1}}>{ctx}</span>}
                 {amt  && <span style={{marginLeft:'auto', color:s.accent, fontVariantNumeric:'tabular-nums'}}>{amt}</span>}
             </div>
         </div>
