@@ -182,6 +182,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
     const myLocalIdx = myIdx === -1 ? 0 : myIdx;
     const seatPositions = getSeatPositions(n);
     const sortedSt = players.slice().sort((a,b) => b.stack - a.stack);
+    const maxStack = Math.max(1, ...players.map(p => p.stack));
 
     const pg = { minHeight:"100vh", background:"radial-gradient(circle at center, #3e2723 0%, #1a0f0a 100%)", color:"#fff", padding:"6px 14px 14px", fontFamily:"'Segoe UI',sans-serif", boxSizing:"border-box" };
 
@@ -295,12 +296,6 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
 
                             const betAmt = rBets[i] || 0;
                             const hasBet = betAmt > 0;
-                            const dx = 50 - pos.left;
-                            const dy = 50 - pos.top;
-                            const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-                            const pushX = (dx / dist) * 40;
-                            const pushY = (dy / dist) * 34;
-
                             const remoteScale = Math.max(0.7, 1 - (n - 3) * 0.05);
                             const innerScale = isLocal
                                 ? (isAct ? 1.04 : 1)
@@ -320,26 +315,9 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                                         transition:'transform 200ms cubic-bezier(0.4, 0, 0.2, 1)'
                                     }}>
                                         {/* Personal chip stack (remote players only) */}
-                                        {p.stack > 0 && !isLocal && (
+                                        {p.stack > 0 && (
                                             <div style={{position:'absolute', right:'100%', bottom:18, width:14, marginRight:6}}>
-                                                <ChipStackSVG amount={p.stack} maxChips={7} />
-                                            </div>
-                                        )}
-
-                                        {/* Bet chips pushed toward pot */}
-                                        {hasBet && (
-                                            <div style={{
-                                                position:'absolute', top:'50%', left:'50%',
-                                                transform:`translate(calc(-50% + ${pushX}px), calc(-50% + ${pushY}px))`,
-                                                pointerEvents:'none',
-                                                transition:'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                                                zIndex:1,
-                                                display:'flex', flexDirection:'column', alignItems:'center'
-                                            }}>
-                                                <div style={{width:18}}>
-                                                    <ChipStackSVG amount={betAmt} maxChips={6} />
-                                                </div>
-                                                <div style={{fontSize:9, fontWeight:800, color:'#fff', background:'rgba(0,0,0,0.7)', padding:'1px 5px', borderRadius:10, marginTop:2, border:`1px solid ${G}`, boxShadow:'0 2px 4px rgba(0,0,0,0.4)'}}>{betAmt}</div>
+                                                <ChipStackSVG amount={p.stack} maxChips={Math.max(1, Math.round((p.stack / maxStack) * 7))} />
                                             </div>
                                         )}
 
@@ -380,9 +358,16 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                                                     <div style={{width:9, height:9, borderRadius:'50%', background: p.inactive ? '#999' : PLAYER_COLORS[i % PLAYER_COLORS.length], boxShadow:`0 0 8px ${p.inactive ? 'transparent' : PLAYER_COLORS[i % PLAYER_COLORS.length]}`}}></div>
                                                     {p.inactive && <span style={{fontSize:10, fontWeight:700, color:'#888'}}>LEFT</span>}
                                                 </div>
-                                                <div style={{fontSize:19, fontWeight:900, color: p.folded || p.inactive ? DIM : G, letterSpacing:0.3, lineHeight:1.1}}>
-                                                    {p.inactive ? '—' : p.stack}
-                                                </div>
+                                                {!p.inactive && (
+                                                    <div style={{fontSize:11, fontWeight:700, color: p.folded ? DIM : '#fff', letterSpacing:0.3, lineHeight:1.2, marginBottom:2}}>
+                                                        {p.name}
+                                                    </div>
+                                                )}
+                                                {betAmt > 0 && !p.folded && !p.inactive && (
+                                                    <div style={{fontSize:12, fontWeight:900, color:G, letterSpacing:0.3, lineHeight:1.1}}>
+                                                        ${betAmt}
+                                                    </div>
+                                                )}
                                                 {p.folded && !p.inactive && (
                                                     <div style={{position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%) rotate(-12deg)', background:'rgba(200,50,50,0.9)', color:'#fff', fontSize:10, fontWeight:900, padding:'2px 12px', borderRadius:4, border:'1px solid rgba(255,255,255,0.3)', pointerEvents:'none', letterSpacing:1}}>FOLDED</div>
                                                 )}
@@ -405,7 +390,9 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                                                 <div style={{width:7, height:7, borderRadius:'50%', background: p.inactive ? '#999' : PLAYER_COLORS[i % PLAYER_COLORS.length], boxShadow:`0 0 5px ${p.inactive ? 'transparent' : PLAYER_COLORS[i % PLAYER_COLORS.length]}`, flexShrink:0}}></div>
                                                 <div style={{display:'flex', flexDirection:'column', minWidth:0}}>
                                                     <div style={{fontSize:10, fontWeight:700, color: p.folded ? 'rgba(255,255,255,0.45)' : '#fff', textDecoration: p.folded ? 'line-through' : 'none', maxWidth:72, overflow:'hidden', textOverflow:'ellipsis', lineHeight:1.15}}>{p.inactive ? 'LEFT' : p.name}</div>
-                                                    <div style={{fontSize:9, fontWeight:800, color: p.folded || p.inactive ? DIM : G, lineHeight:1.1, letterSpacing:0.3}}>{p.inactive ? '—' : p.stack}</div>
+                                                    {betAmt > 0 && !p.folded && !p.inactive && (
+                                                        <div style={{fontSize:9, fontWeight:800, color:G, lineHeight:1.1, letterSpacing:0.3}}>${betAmt}</div>
+                                                    )}
                                                 </div>
                                                 {i === sbI && <PositionDot color="#42a5f5">SB</PositionDot>}
                                                 {i === bbI && <PositionDot color="#ef5350">BB</PositionDot>}
