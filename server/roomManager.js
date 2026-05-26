@@ -38,6 +38,7 @@ function createRoom(preferredCode) {
         setupPhase: 'waiting', // waiting, configuring, countdown, in_game
         players: [], // { id, name, ready, stack, isHost }
         sockets: new Set(),
+        socketSeats: {},
         gameState: {
             phase: "lobby", // "lobby", "menu" (setup), "preflop", etc.
             players: [],
@@ -67,12 +68,12 @@ function createRoom(preferredCode) {
     return roomCode;
 }
 
-function joinRoom(roomCode, socketId, name, isHost = false, maxPlayers = 6, equalStack = true) {
+function joinRoom(roomCode, socketId, name, isHost = false, maxPlayers = 6, equalStack = true, virtualId = null) {
     const room = activeRooms.get(roomCode);
     if (!room) throw new Error("Room does not exist");
     if (room.setupPhase !== 'waiting') throw new Error("Game already in progress");
     if (room.players.length >= room.maxPlayers && !isHost) throw new Error("Room is full");
-    if (room.players.find(p => p.id === socketId)) return; // Already joined
+    if (!virtualId && room.players.find(p => p.id === socketId)) return; // Already joined (first seat)
 
     // Check for duplicate names
     const trimmedName = (name || '').trim();
@@ -86,15 +87,18 @@ function joinRoom(roomCode, socketId, name, isHost = false, maxPlayers = 6, equa
         room.equalStack = equalStack;
     }
 
+    const playerId = virtualId || socketId;
     room.players.push({
-        id: socketId,
+        id: playerId,
         name: trimmedName || `Player ${room.players.length + 1}`,
-        pId: socketId + '_' + Date.now(),
+        pId: playerId + '_' + Date.now(),
         ready: isHost,
         stack: 0,
         isHost: isHost
     });
     room.sockets.add(socketId);
+    if (!room.socketSeats[socketId]) room.socketSeats[socketId] = [];
+    room.socketSeats[socketId].push(playerId);
 }
 
 function createLoadedRoom(saveData) {
@@ -109,6 +113,7 @@ function createLoadedRoom(saveData) {
         setupPhase: 'loaded_waiting',
         players: [],
         sockets: new Set(),
+        socketSeats: {},
         gameState: JSON.parse(JSON.stringify(saveData.gameState)),
         expectedNames: saveData.playerNames,
         isLoaded: true,
@@ -118,12 +123,12 @@ function createLoadedRoom(saveData) {
     return roomCode;
 }
 
-function joinLoadedRoom(roomCode, socketId, name) {
+function joinLoadedRoom(roomCode, socketId, name, virtualId = null) {
     const room = activeRooms.get(roomCode);
     if (!room) throw new Error("Room does not exist");
     if (!room.isLoaded) throw new Error("This is not a loaded game room");
     if (room.setupPhase !== 'loaded_waiting') throw new Error("Game already resumed");
-    if (room.players.find(p => p.id === socketId)) return;
+    if (!virtualId && room.players.find(p => p.id === socketId)) return;
 
     const trimmedName = (name || '').trim();
 
@@ -138,26 +143,29 @@ function joinLoadedRoom(roomCode, socketId, name) {
         throw new Error("A player named '" + trimmedName + "' has already joined.");
     }
 
-    const isHost = room.players.length === 0; // First player is host
+    const isHost = room.players.length === 0 && !virtualId; // First real seat is host
     if (isHost) {
         room.hostId = socketId;
     }
 
+    const playerId = virtualId || socketId;
     room.players.push({
-        id: socketId,
+        id: playerId,
         name: nameMatch, // Use exact case from save
-        pId: socketId + '_' + Date.now(),
+        pId: playerId + '_' + Date.now(),
         ready: true,
         stack: 0,
         isHost: isHost
     });
     room.sockets.add(socketId);
+    if (!room.socketSeats[socketId]) room.socketSeats[socketId] = [];
+    room.socketSeats[socketId].push(playerId);
 }
 
-function setPlayerReady(roomCode, socketId, ready) {
+function setPlayerReady(roomCode, playerId, ready) {
     const room = activeRooms.get(roomCode);
     if (!room) return;
-    const player = room.players.find(p => p.id === socketId);
+    const player = room.players.find(p => p.id === playerId);
     if (player) player.ready = ready;
 }
 
@@ -182,7 +190,9 @@ function removeClientFromRoom(roomCode, socketId) {
 
     // If game hasn't started, remove from lobby array
     if (room.setupPhase !== 'in_game') {
-        room.players = room.players.filter(p => p.id !== socketId);
+        const seatIds = room.socketSeats[socketId] || [socketId];
+        room.players = room.players.filter(p => !seatIds.includes(p.id));
+        delete room.socketSeats[socketId];
         room.sockets.delete(socketId);
         if (room.players.length === 0) {
             deleteRoom(roomCode);
@@ -205,11 +215,12 @@ function removeClientFromRoom(roomCode, socketId) {
 function markPlayerInactive(roomCode, socketId) {
     const room = activeRooms.get(roomCode);
     if (!room) return;
-    const player = room.players.find(p => p.id === socketId);
-    if (player) {
-        player.inactive = true;
+    const seatIds = room.socketSeats[socketId] || [socketId];
+    for (const seatId of seatIds) {
+        const player = room.players.find(p => p.id === seatId);
+        if (player) player.inactive = true;
         if (room.gameState && room.gameState.players) {
-            const gp = room.gameState.players.find(p => p.id === socketId);
+            const gp = room.gameState.players.find(p => p.id === seatId);
             if (gp) gp.inactive = true;
         }
     }

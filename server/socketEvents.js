@@ -67,12 +67,21 @@ module.exports = function(io) {
                 const roomCode = roomManager.createRoom(data.roomCode);
                 socket.join(roomCode);
                 socket.currentRoom = roomCode;
-                
+
                 roomManager.joinRoom(roomCode, socket.id, data.name, true, data.maxPlayers, data.equalStack);
-                
+                if (data.secondName) {
+                    try {
+                        roomManager.joinRoom(roomCode, socket.id, data.secondName, false, undefined, undefined, socket.id + '_2');
+                    } catch (innerError) {
+                        roomManager.removeClientFromRoom(roomCode, socket.id);
+                        throw innerError;
+                    }
+                }
+
                 const room = roomManager.getRoom(roomCode);
                 const player = room.players.find(p => p.id === socket.id);
-                callback({ success: true, roomCode, playerId: player ? player.pId : null });
+                const player2 = data.secondName ? room.players.find(p => p.id === socket.id + '_2') : null;
+                callback({ success: true, roomCode, playerId: player ? player.pId : null, secondPlayerId: player2 ? player2.pId : undefined });
                 io.to(roomCode).emit('lobby_update', roomManager.getRoom(roomCode));
             } catch (error) {
                 callback({ success: false, message: error.message || "Server Error" });
@@ -90,11 +99,20 @@ module.exports = function(io) {
 
                 socket.join(roomCode);
                 socket.currentRoom = roomCode;
-                
+
                 roomManager.joinRoom(roomCode, socket.id, data.name, false);
-                
+                if (data.secondName) {
+                    try {
+                        roomManager.joinRoom(roomCode, socket.id, data.secondName, false, undefined, undefined, socket.id + '_2');
+                    } catch (innerError) {
+                        roomManager.removeClientFromRoom(roomCode, socket.id);
+                        throw innerError;
+                    }
+                }
+
                 const player = room.players.find(p => p.id === socket.id);
-                callback({ success: true, playerId: player ? player.pId : null });
+                const player2 = data.secondName ? room.players.find(p => p.id === socket.id + '_2') : null;
+                callback({ success: true, playerId: player ? player.pId : null, secondPlayerId: player2 ? player2.pId : undefined });
                 io.to(roomCode).emit('lobby_update', roomManager.getRoom(roomCode));
             } catch (error) {
                 // If join failed, leave the socket room
@@ -124,10 +142,19 @@ module.exports = function(io) {
             callback({ existingNames });
         });
 
-        socket.on('set_ready', (ready) => {
+        socket.on('set_ready', (data) => {
             if (!socket.currentRoom) return;
-            roomManager.setPlayerReady(socket.currentRoom, socket.id, ready);
-            io.to(socket.currentRoom).emit('lobby_update', roomManager.getRoom(socket.currentRoom));
+            const isObj = data !== null && typeof data === 'object';
+            const playerId = isObj ? (data.playerId || socket.id) : socket.id;
+            const ready = isObj ? data.ready : data;
+            const room = roomManager.getRoom(socket.currentRoom);
+            if (!room) return;
+            const ownedSeats = room.socketSeats?.[socket.id];
+            if (ownedSeats && !ownedSeats.includes(playerId)) {
+                return;
+            }
+            roomManager.setPlayerReady(socket.currentRoom, playerId, ready);
+            io.to(socket.currentRoom).emit('lobby_update', room);
         });
 
         socket.on('lock_room', () => {
@@ -218,7 +245,14 @@ module.exports = function(io) {
             if (actI !== undefined && actI !== null && gs.players[actI]) {
                 data.playerId = gs.players[actI].id;
             }
-            
+
+            // Ownership guard: socket must own the seat currently in queue
+            const ownedSeats = room.socketSeats?.[socket.id];
+            if (ownedSeats && actI !== undefined && actI !== null && !ownedSeats.includes(data.playerId)) {
+                console.warn('[player_action] socket', socket.id, 'tried to act for unowned seat', data.playerId);
+                return;
+            }
+
             const phaseBefore = gs.phase;
             processAction(gs, data);
 
@@ -255,15 +289,18 @@ module.exports = function(io) {
             }
         });
 
-        socket.on('confirm_result', () => {
+        socket.on('confirm_result', (data) => {
             if (!socket.currentRoom) return;
             const room = roomManager.getRoom(socket.currentRoom);
             if (rejectIfStalled(socket, room)) return;
             if (!room) return;
+            const playerId = data?.playerId || socket.id;
+            const ownedSeats = room.socketSeats?.[socket.id];
+            if (ownedSeats && !ownedSeats.includes(playerId)) return;
             const gs = room.gameState;
             if (!gs.confirmations) gs.confirmations = [];
-            if (!gs.confirmations.includes(socket.id)) {
-                gs.confirmations.push(socket.id);
+            if (!gs.confirmations.includes(playerId)) {
+                gs.confirmations.push(playerId);
             }
             io.to(socket.currentRoom).emit('game_state_update', gs);
         });
@@ -395,14 +432,22 @@ module.exports = function(io) {
                 }
 
                 const roomCode = roomManager.createLoadedRoom(save);
-                // Host joins the loaded room
                 roomManager.joinLoadedRoom(roomCode, socket.id, hostName);
+                if (data.secondName) {
+                    try {
+                        roomManager.joinLoadedRoom(roomCode, socket.id, data.secondName, socket.id + '_2');
+                    } catch (innerError) {
+                        roomManager.removeClientFromRoom(roomCode, socket.id);
+                        throw innerError;
+                    }
+                }
                 socket.join(roomCode);
                 socket.currentRoom = roomCode;
 
                 const room = roomManager.getRoom(roomCode);
                 const player = room.players.find(p => p.id === socket.id);
-                callback({ success: true, roomCode, playerId: player ? player.pId : null });
+                const player2 = data.secondName ? room.players.find(p => p.id === socket.id + '_2') : null;
+                callback({ success: true, roomCode, playerId: player ? player.pId : null, secondPlayerId: player2 ? player2.pId : undefined });
                 io.to(roomCode).emit('lobby_update', roomManager.getRoom(roomCode));
             } catch (e) {
                 callback({ success: false, message: e.message });
@@ -417,13 +462,20 @@ module.exports = function(io) {
                 if (!room.isLoaded) return callback({ success: false, message: 'This is not a loaded game. Use regular join.' });
 
                 roomManager.joinLoadedRoom(roomCode, socket.id, data.name);
+                if (data.secondName) {
+                    try {
+                        roomManager.joinLoadedRoom(roomCode, socket.id, data.secondName, socket.id + '_2');
+                    } catch (innerError) {
+                        roomManager.removeClientFromRoom(roomCode, socket.id);
+                        throw innerError;
+                    }
+                }
                 socket.join(roomCode);
                 socket.currentRoom = roomCode;
 
-                // TODO: add playerId (player.pId) to this callback so the client can store
-                // it in localStorage for pId-based reconnect matching — same as join_game does.
-                // Without it, reconnect for loaded-game joiners falls back to name-only matching.
-                callback({ success: true });
+                const player = room.players.find(p => p.id === socket.id);
+                const player2 = data.secondName ? room.players.find(p => p.id === socket.id + '_2') : null;
+                callback({ success: true, playerId: player ? player.pId : null, secondPlayerId: player2 ? player2.pId : undefined });
                 io.to(roomCode).emit('lobby_update', roomManager.getRoom(roomCode));
             } catch (e) {
                 callback({ success: false, message: e.message });
@@ -453,17 +505,20 @@ module.exports = function(io) {
             io.to(socket.currentRoom).emit('game_state_update', room.gameState);
         });
 
-        socket.on('restart_toggle', () => {
+        socket.on('restart_toggle', (data) => {
             if (!socket.currentRoom) return;
             const room = roomManager.getRoom(socket.currentRoom);
             if (rejectIfStalled(socket, room)) return;
             if (!room) return;
+            const playerId = data?.playerId || socket.id;
+            const ownedSeats = room.socketSeats?.[socket.id];
+            if (ownedSeats && !ownedSeats.includes(playerId)) return;
             const gs = room.gameState;
             if (!gs.restartApprovals) gs.restartApprovals = [];
 
-            const idx = gs.restartApprovals.indexOf(socket.id);
+            const idx = gs.restartApprovals.indexOf(playerId);
             if (idx === -1) {
-                gs.restartApprovals.push(socket.id);
+                gs.restartApprovals.push(playerId);
             } else {
                 gs.restartApprovals.splice(idx, 1);
                 // Untoggling cancels host-confirming state
@@ -563,8 +618,12 @@ module.exports = function(io) {
             }
 
             // Live game — stall the room
-            const leaverPlayer = gs ? gs.players.find(p => p.id === socket.id) : null;
-            const leftBy = leaverPlayer ? leaverPlayer.name : 'A player';
+            const seatIds = room.socketSeats?.[socket.id] || [socket.id];
+            const leaverNames = seatIds
+                .map(sid => gs ? gs.players.find(p => p.id === sid) : null)
+                .filter(Boolean)
+                .map(p => p.name);
+            const leftBy = leaverNames.length > 0 ? leaverNames.join(' & ') : 'A player';
 
             room.stalled = true;
             room.stalledBy = leftBy;
@@ -585,18 +644,7 @@ module.exports = function(io) {
             const room = roomManager.getRoom(data.roomCode);
             if (!room) return callback({ success: false, reason: 'not_found' });
 
-            // Lookup by playerId first (unambiguous), fall back to name
-            let player = null;
-            if (data.playerId) {
-                player = room.players.find(p => p.pId === data.playerId);
-            }
-            if (!player && data.playerName) {
-                player = room.players.find(p => p.name === data.playerName);
-            }
-            if (!player) return callback({ success: false, reason: 'not_found' });
-
-            const oldId = player.id;
-            const playerId = player.pId; // stable identifier
+            const gs = room.gameState;
 
             // SOCKET ID REMAP — CRITICAL FOR RECONNECT
             // Every game-state structure keyed by or containing socket.id MUST be
@@ -609,66 +657,77 @@ module.exports = function(io) {
             // gs.history[*].wid/.net keys, gs.potAward.eligibleIds, gs.cp[*].eligible[*].id.
             //
             // When adding new game state with socket IDs, ADD THE REMAP BELOW.
-            player.id = socket.id;
-            if (room.hostId === oldId) room.hostId = socket.id;
+            // Called once per seat — primary seat uses socket.id, secondary uses socket.id + '_2'.
+            function remapId(oldId, newId) {
+                const p = room.players.find(p => p.id === oldId);
+                if (!p) return;
+                p.id = newId;
+                if (room.hostId === oldId) room.hostId = newId;
+                if (!gs || !gs.players) return;
 
-            // Remap in game state
-            const gs = room.gameState;
-            if (gs && gs.players) {
                 const gp = gs.players.find(p => p.id === oldId);
-                if (gp) gp.id = socket.id;
+                if (gp) gp.id = newId;
 
-                // Remap all per-player maps
                 const remapKey = (obj) => {
-                    if (obj && obj[oldId] !== undefined) { obj[socket.id] = obj[oldId]; delete obj[oldId]; }
+                    if (obj && obj[oldId] !== undefined) { obj[newId] = obj[oldId]; delete obj[oldId]; }
                 };
                 remapKey(gs.hc);
                 remapKey(gs.scores);
                 remapKey(gs.origSt);
                 remapKey(gs.rBets);
 
-                // Remap in arrays
                 const remapArr = (arr) => {
-                    if (arr) {
-                        for (let i = 0; i < arr.length; i++) {
-                            if (arr[i] === oldId) arr[i] = socket.id;
-                        }
-                    }
+                    if (arr) for (let i = 0; i < arr.length; i++) if (arr[i] === oldId) arr[i] = newId;
                 };
                 remapArr(gs.ai);
                 remapArr(gs.confirmations);
                 remapArr(gs.restartApprovals);
 
-                // Remap in history records
                 if (gs.history) {
                     gs.history.forEach(h => {
-                        if (h.wid === oldId) h.wid = socket.id;
-                        if (h.net && h.net[oldId] !== undefined) { h.net[socket.id] = h.net[oldId]; delete h.net[oldId]; }
-                        if (h.stacks && h.stacks[oldId] !== undefined) { h.stacks[socket.id] = h.stacks[oldId]; delete h.stacks[oldId]; }
-                        if (h.playerNames && h.playerNames[oldId] !== undefined) { h.playerNames[socket.id] = h.playerNames[oldId]; delete h.playerNames[oldId]; }
+                        if (h.wid === oldId) h.wid = newId;
+                        if (h.net && h.net[oldId] !== undefined) { h.net[newId] = h.net[oldId]; delete h.net[oldId]; }
+                        if (h.stacks && h.stacks[oldId] !== undefined) { h.stacks[newId] = h.stacks[oldId]; delete h.stacks[oldId]; }
+                        if (h.playerNames && h.playerNames[oldId] !== undefined) { h.playerNames[newId] = h.playerNames[oldId]; delete h.playerNames[oldId]; }
                     });
                 }
 
-                // Remap potAward.eligibleIds — without this, a reconnected pot contributor
-                // sees "Waiting for approval" instead of Approve/Dissent and the game locks.
                 if (gs.potAward && gs.potAward.eligibleIds) {
-                    gs.potAward.eligibleIds = gs.potAward.eligibleIds.map(
-                        id => id === oldId ? socket.id : id
-                    );
+                    gs.potAward.eligibleIds = gs.potAward.eligibleIds.map(id => id === oldId ? newId : id);
                 }
 
-                // Remap cp eligible player IDs — keeps totalApproversForThisPot count
-                // correct and ensures dealer-exclusion logic compares current IDs.
                 if (gs.cp) {
                     gs.cp.forEach(pot => {
-                        if (pot.eligible) {
-                            pot.eligible.forEach(p => {
-                                if (p.id === oldId) p.id = socket.id;
-                            });
-                        }
+                        if (pot.eligible) pot.eligible.forEach(ep => { if (ep.id === oldId) ep.id = newId; });
                     });
                 }
             }
+
+            // Find and remap primary seat
+            let player = null;
+            if (data.playerId) player = room.players.find(p => p.pId === data.playerId);
+            if (!player && data.playerName) player = room.players.find(p => p.name === data.playerName);
+            if (!player) return callback({ success: false, reason: 'not_found' });
+
+            const primaryPId = player.pId;
+            remapId(player.id, socket.id);
+
+            // Find and remap secondary seat (dual-seat device)
+            let secondaryPId = null;
+            if (data.secondPId || data.secondName) {
+                let player2 = null;
+                if (data.secondPId) player2 = room.players.find(p => p.pId === data.secondPId);
+                if (!player2 && data.secondName) player2 = room.players.find(p => p.name === data.secondName);
+                if (player2) {
+                    secondaryPId = player2.pId;
+                    remapId(player2.id, socket.id + '_2');
+                }
+            }
+
+            // Rebuild socketSeats for this socket from scratch
+            room.socketSeats[socket.id] = secondaryPId
+                ? [socket.id, socket.id + '_2']
+                : [socket.id];
 
             // Re-join the socket room (disconnect auto-leaves)
             socket.join(data.roomCode);
@@ -677,14 +736,14 @@ module.exports = function(io) {
             // Stalled room — send stall modal instead of normal game sync
             if (room.stalled) {
                 socket.emit('game_stalled', { leftBy: room.stalledBy });
-                callback({ success: true, playerId, inGame: room.setupPhase === 'in_game' });
+                callback({ success: true, playerId: primaryPId, secondPlayerId: secondaryPId || undefined, inGame: room.setupPhase === 'in_game' });
                 return;
             }
 
             // Sync state back — always send both so client knows where it is
             socket.emit('lobby_update', room);
             if (gs) socket.emit('game_state_update', gs);
-            callback({ success: true, playerId, inGame: room.setupPhase === 'in_game' });
+            callback({ success: true, playerId: primaryPId, secondPlayerId: secondaryPId || undefined, inGame: room.setupPhase === 'in_game' });
         });
     });
 };
