@@ -31,7 +31,7 @@ const TONE_STYLES = {
     idle:    { bg: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)', border: 'rgba(255,255,255,0.10)', glow: '0 4px 12px rgba(0,0,0,0.45)',                                          accent: DIM_STRONG, label: 'Idle'    },
 };
 
-export default function GameTable({ gameState, emitAction, socket, myId, isHost, onLeave, appPlayerName, appRoomCode }) {
+export default function GameTable({ gameState, emitAction, socket, myId, isHost, onLeave, appPlayerName, appRoomCode, activeSeatIdx }) {
     const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver } = gameState;
 
     const [rm, setRm] = useState(false);
@@ -54,6 +54,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
     useEffect(() => { setShowCumulative(false); }, [sn]);
     useEffect(() => { setConfirmingAllIn(false); }, [rm]);
     useEffect(() => { if (potAward) setShowPotModal(false); }, [potAward]);
+    useEffect(() => { setRm(false); setRa(''); }, [activeSeatIdx]);
 
     const n = players ? players.length : 0;
     const actI = queue ? queue[0] : null;
@@ -162,7 +163,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
             <div style={{textAlign:"center",padding:"16px 0 10px"}}><div style={{fontSize:44}}>🏁</div><h1 style={{color:G,fontSize:24,margin:"5px 0 2px"}}>GAME OVER</h1><p style={{color:DIM,fontSize:13}}>All {cfg.sessions} sessions complete!</p></div>
             <Card>{gs.map((p,i)=>{const isW=i===0,isL=i===li,clr=isW?G:i===1?SV:i===2?BR:isL?"#ff3333":"#fff";return(<div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 6px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><span style={{color:clr,fontWeight:isW?800:400,fontSize:isW?17:14}}>{isW?"👑 ":""}{isL?<span className="drip">{p.name} ☠️</span>:<span>{MED[i]} {p.name}</span>}</span><span style={{color:clr,fontWeight:700}}>{scores[p.id]||0} pts</span></div>);})}</Card>
             <div style={{display:'flex',gap:10,marginBottom:8}}>
-                <Btn full bg={myApproval?'#1a7a40':'#b8880e'} onClick={()=>socket.emit('restart_toggle')}>
+                <Btn full bg={myApproval?'#1a7a40':'#b8880e'} onClick={()=>socket.emit('restart_toggle', { playerId: myId })}>
                     {myApproval?'✓ Approved':'Restart'} [{approvalX}/{totalActiveY}]
                 </Btn>
                 <Btn full bg="#8b1a1a" onClick={()=>{socket.emit('restart_leave');if(onLeave)onLeave();}}>Leave</Btn>
@@ -599,7 +600,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                                             <Btn full bg="#333" dis>✅ Approved {confirmed.length}/{totalApproversForThisPot}</Btn>
                                         ) : (
                                             <div style={{display:'flex',gap:8}}>
-                                                <Btn style={{flex:1}} bg="#1976d2" onClick={()=>socket.emit('confirm_result')}>Approve {confirmed.length}/{totalApproversForThisPot}</Btn>
+                                                <Btn style={{flex:1}} bg="#1976d2" onClick={()=>socket.emit('confirm_result', { playerId: myId })}>Approve {confirmed.length}/{totalApproversForThisPot}</Btn>
                                                 <Btn bg="#7a1a1a" onClick={()=>socket.emit('dissent_result')}>Dissent</Btn>
                                             </div>
                                         )

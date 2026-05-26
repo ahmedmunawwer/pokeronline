@@ -289,3 +289,10 @@ body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background-co
 .gt-app-info__name  { color: rgba(240,192,64,0.85); font-weight: 700; font-size: 11px; }
 .gt-app-info__sep   { color: rgba(255,255,255,0.25); margin: 0 6px; }
 .gt-app-info__room  { letter-spacing: 0.08em; color: rgba(255,255,255,0.60); font-size: 10px; }
+
+/* ── Switch button pulse (hot-seat mode) ──────────────────────────────────── */
+@keyframes switchBtnPulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(240,192,64,0.5), 0 0 10px rgba(240,192,64,0.35); }
+    50%      { box-shadow: 0 0 0 2px rgba(240,192,64,0.9), 0 0 18px rgba(240,192,64,0.6); }
+}
+.switch-pulse { animation: switchBtnPulse 1.2s ease-in-out infinite; }

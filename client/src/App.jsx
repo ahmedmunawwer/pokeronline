@@ -9,18 +9,26 @@ const SESSION_KEYS = {
   roomCode: 'pokeronline_roomCode',
   playerName: 'pokeronline_playerName',
   playerId: 'pokeronline_playerId',
+  secondPlayerId: 'pokeronline_secondPlayerId',
+  secondPlayerName: 'pokeronline_secondPlayerName',
 };
+const ACTIVE_SEAT_KEY = 'pokeronline_activeSeatIdx';
 
-function saveSession(code, playerName, playerId) {
+function saveSession(code, playerName, playerId, secondName, secondPlayerId) {
   localStorage.setItem(SESSION_KEYS.roomCode, code);
   localStorage.setItem(SESSION_KEYS.playerName, playerName);
   if (playerId) localStorage.setItem(SESSION_KEYS.playerId, playerId);
+  if (secondName) localStorage.setItem(SESSION_KEYS.secondPlayerName, secondName);
+  if (secondPlayerId) localStorage.setItem(SESSION_KEYS.secondPlayerId, secondPlayerId);
 }
 
 function clearSession() {
   localStorage.removeItem(SESSION_KEYS.roomCode);
   localStorage.removeItem(SESSION_KEYS.playerName);
   localStorage.removeItem(SESSION_KEYS.playerId);
+  localStorage.removeItem(SESSION_KEYS.secondPlayerId);
+  localStorage.removeItem(SESSION_KEYS.secondPlayerName);
+  sessionStorage.removeItem(ACTIVE_SEAT_KEY);
 }
 
 function getSavedSession() {
@@ -28,7 +36,19 @@ function getSavedSession() {
     roomCode: localStorage.getItem(SESSION_KEYS.roomCode),
     playerName: localStorage.getItem(SESSION_KEYS.playerName),
     playerId: localStorage.getItem(SESSION_KEYS.playerId),
+    secondPlayerId: localStorage.getItem(SESSION_KEYS.secondPlayerId),
+    secondPlayerName: localStorage.getItem(SESSION_KEYS.secondPlayerName),
   };
+}
+
+function hasPending(id, gs) {
+  const p = gs.players?.find(pl => pl.id === id);
+  if (!p || p.inactive) return false;
+  if (gs.queue?.[0] !== undefined && gs.players?.[gs.queue[0]]?.id === id) return true;
+  if ((gs.phase === 'end' || gs.phase === 'session_end') &&
+      gs.confirmations && !gs.confirmations.includes(id)) return true;
+  if (gs.restartApprovals !== undefined && !gs.restartApprovals.includes(id)) return true;
+  return false;
 }
 
 function App() {
@@ -39,6 +59,14 @@ function App() {
   const [leaveDialog, setLeaveDialog] = useState(null);
   const [reconnecting, setReconnecting] = useState(false);
   const [stallInfo, setStallInfo] = useState(null);
+  const [mySeats, setMySeats] = useState([]);
+  const [activeSeatIdx, setActiveSeatIdx] = useState(() => {
+    const v = sessionStorage.getItem(ACTIVE_SEAT_KEY);
+    return v === '1' ? 1 : 0;
+  });
+  const [autoSwitch, setAutoSwitch] = useState(
+    () => sessionStorage.getItem('pokeronline_autoSwitch') === '1'
+  );
 
   useEffect(() => {
     const saved = getSavedSession();
@@ -50,11 +78,18 @@ function App() {
         roomCode: saved.roomCode,
         playerName: saved.playerName,
         playerId: saved.playerId,
+        secondPId: saved.secondPlayerId || undefined,
+        secondName: saved.secondPlayerName || undefined,
       }, (res) => {
         setReconnecting(false);
         if (res.success) {
           setRoomCode(saved.roomCode);
-          if (res.playerId) saveSession(saved.roomCode, saved.playerName, res.playerId);
+          const seats = [{ name: saved.playerName, pId: res.playerId || saved.playerId }];
+          if (res.secondPlayerId) seats.push({ name: saved.secondPlayerName, pId: res.secondPlayerId });
+          setMySeats(seats);
+          if (res.playerId) saveSession(saved.roomCode, saved.playerName, res.playerId, saved.secondPlayerName, res.secondPlayerId);
+          const savedIdx = sessionStorage.getItem(ACTIVE_SEAT_KEY) === '1' ? 1 : 0;
+          setActiveSeatIdx(seats.length === 2 ? savedIdx : 0);
         } else {
           clearSession();
         }
@@ -94,6 +129,17 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!autoSwitch || mySeats.length !== 2 || !gameState) return;
+    const activeId   = activeSeatIdx === 0 ? socket.id : socket.id + '_2';
+    const inactiveId = activeSeatIdx === 0 ? socket.id + '_2' : socket.id;
+    if (hasPending(inactiveId, gameState) && !hasPending(activeId, gameState)) {
+      const next = 1 - activeSeatIdx;
+      setActiveSeatIdx(next);
+      sessionStorage.setItem(ACTIVE_SEAT_KEY, String(next));
+    }
+  }, [autoSwitch, gameState, activeSeatIdx, mySeats.length]);
+
   // Show spinner during ALL reconnects, not just the initial load — mid-game reconnects
   // briefly invalidate local seat identification because socket.id changes the moment the
   // connection re-establishes, but gameState/lobbyState still carry the old ID until the
@@ -124,7 +170,17 @@ function App() {
   }
 
   if (!roomCode || !lobbyState) {
-    return <Lobby onJoined={(code, playerName, playerId) => { setRoomCode(code); saveSession(code, playerName, playerId); }} />;
+    return <Lobby onJoined={(code, playerName, playerId, secondName, secondPlayerId) => {
+      setRoomCode(code);
+      saveSession(code, playerName, playerId, secondName, secondPlayerId);
+      const seats = [{ name: playerName, pId: playerId }];
+      if (secondName && secondPlayerId) seats.push({ name: secondName, pId: secondPlayerId });
+      setMySeats(seats);
+      if (seats.length < 2) {
+        setActiveSeatIdx(0);
+        sessionStorage.removeItem(ACTIVE_SEAT_KEY);
+      }
+    }} />;
   }
 
   const emitAction = (action, amount = 0, actionObj = null) => {
@@ -135,7 +191,22 @@ function App() {
   const isHost = lobbyState?.hostId === socket.id;
   const inGame = lobbyState?.setupPhase === 'in_game';
 
-  const clearRoom = () => { setStallInfo(null); setLeaveDialog(null); setRoomCode(null); setLobbyState(null); setGameState(null); clearSession(); };
+  const activeSeatId = mySeats.length > 0 ? (activeSeatIdx === 0 ? socket.id : socket.id + '_2') : null;
+  const inactiveSeatId = mySeats.length === 2
+    ? (activeSeatIdx === 0 ? socket.id + '_2' : socket.id)
+    : null;
+  const switchPulse = mySeats.length === 2 && !!inactiveSeatId && !!gameState && (() => {
+    const gs = gameState;
+    const inactiveGsPlayer = gs.players?.find(p => p.id === inactiveSeatId);
+    if (!inactiveGsPlayer || inactiveGsPlayer.inactive) return false;
+    if (gs.queue?.[0] !== undefined && gs.players?.[gs.queue[0]]?.id === inactiveSeatId) return true;
+    if ((gs.phase === 'end' || gs.phase === 'session_end') &&
+        gs.confirmations && !gs.confirmations.includes(inactiveSeatId)) return true;
+    if (gs.restartApprovals !== undefined && !gs.restartApprovals.includes(inactiveSeatId)) return true;
+    return false;
+  })();
+
+  const clearRoom = () => { setStallInfo(null); setLeaveDialog(null); setRoomCode(null); setLobbyState(null); setGameState(null); setMySeats([]); setActiveSeatIdx(0); setAutoSwitch(false); sessionStorage.removeItem('pokeronline_autoSwitch'); clearSession(); };
 
   const handleLeaveClick = () => {
     if (inGame) {
@@ -177,19 +248,35 @@ function App() {
     <div className="app-shell" style={{minHeight:'100vh',background:'radial-gradient(circle at center, #3e2723 0%, #1a0f0a 100%)',color:'#fff',padding:'12px 14px',fontFamily:"'Segoe UI',sans-serif",boxSizing:'border-box'}}>
       <div className="app-header-bar" style={{maxWidth:460,margin:'0 auto',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,background:'rgba(0,0,0,0.4)',padding:'10px 15px',borderRadius:12,border:'1px solid rgba(240,192,64,0.3)',position:'relative',zIndex:2000}}>
         <div style={{display:'flex',alignItems:'center',gap:14}}>
-          {myPlayer && (
+          {myPlayer && mySeats.length < 2 && (
             <div style={{display:'flex',alignItems:'center',gap:5}}>
               <span style={{color:'rgba(255,255,255,0.35)',fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase'}}>YOU</span>
               <span style={{color:'rgba(240,192,64,0.85)',fontSize:13,fontWeight:700}}>{myPlayer.name}</span>
             </div>
           )}
-          <div style={{width:1,height:16,background:'rgba(255,255,255,0.15)',display:myPlayer?'block':'none'}} />
+          <div style={{width:1,height:16,background:'rgba(255,255,255,0.15)',display:(myPlayer && mySeats.length < 2)?'block':'none'}} />
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <span style={{color:'rgba(255,255,255,0.6)',fontSize:13,fontWeight:700,letterSpacing:1,textTransform:'uppercase'}}>Room</span>
             <span style={{color:'#f0c040',fontSize:22,fontWeight:900}}>{roomCode}</span>
           </div>
         </div>
-        <button onClick={handleLeaveClick} style={{background:'rgba(211,47,47,0.2)',border:'1px solid rgba(211,47,47,0.5)',color:'#ff8a80',padding:'6px 12px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer'}}>Leave</button>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          {mySeats.length === 2 && (
+            <>
+              <span style={{color:'rgba(255,255,255,0.5)',fontSize:11,fontWeight:600,whiteSpace:'nowrap'}}>Acting: <span style={{color:'#f0c040'}}>{mySeats[activeSeatIdx]?.name}</span></span>
+              <button
+                onClick={() => { const next = !autoSwitch; setAutoSwitch(next); sessionStorage.setItem('pokeronline_autoSwitch', next ? '1' : '0'); }}
+                style={{background:autoSwitch?'rgba(240,192,64,0.25)':'rgba(255,255,255,0.06)',border:`1px solid ${autoSwitch?'rgba(240,192,64,0.6)':'rgba(255,255,255,0.18)'}`,color:autoSwitch?'#f0c040':'rgba(255,255,255,0.35)',padding:'6px 8px',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer'}}
+              >Auto</button>
+              <button
+                className={switchPulse && !autoSwitch ? 'switch-pulse' : undefined}
+                onClick={() => { const n = 1 - activeSeatIdx; setActiveSeatIdx(n); sessionStorage.setItem(ACTIVE_SEAT_KEY, String(n)); }}
+                style={{background:'rgba(240,192,64,0.15)',border:'1px solid rgba(240,192,64,0.4)',color:'#f0c040',padding:'6px 10px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer'}}
+              >Switch</button>
+            </>
+          )}
+          <button onClick={handleLeaveClick} style={{background:'rgba(211,47,47,0.2)',border:'1px solid rgba(211,47,47,0.5)',color:'#ff8a80',padding:'6px 12px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer'}}>Leave</button>
+        </div>
       </div>
       {leaveDialog && <ConfirmDialog title={leaveDialog.title} body={leaveDialog.body} confirmLabel={leaveDialog.confirmLabel} confirmBg={leaveDialog.confirmBg} onConfirm={leaveDialog.onConfirm} onCancel={() => setLeaveDialog(null)} />}
 
@@ -204,9 +291,9 @@ function App() {
       )}
 
       {lobbyState.setupPhase !== 'in_game' ? (
-        <SetupFlow lobbyState={lobbyState} onLeave={() => { socket.emit('leave_room'); clearRoom(); }} />
+        <SetupFlow lobbyState={lobbyState} activeSeatId={activeSeatId} onLeave={() => { socket.emit('leave_room'); clearRoom(); }} />
       ) : (
-        gameState ? <GameTable gameState={gameState} emitAction={emitAction} socket={socket} myId={socket.id} isHost={lobbyState.hostId === socket.id} onLeave={() => { socket.emit('leave_room'); clearRoom(); }} appPlayerName={myPlayer?.name} appRoomCode={roomCode} /> : <div style={{textAlign:'center',marginTop:50}}>Loading Game...</div>
+        gameState ? <GameTable gameState={gameState} emitAction={emitAction} socket={socket} myId={activeSeatId} isHost={lobbyState.hostId === socket.id} onLeave={() => { socket.emit('leave_room'); clearRoom(); }} appPlayerName={myPlayer?.name} appRoomCode={roomCode} activeSeatIdx={activeSeatIdx} /> : <div style={{textAlign:'center',marginTop:50}}>Loading Game...</div>
       )}
     </div>
   );

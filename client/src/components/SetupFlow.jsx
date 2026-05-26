@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import socket from '../socket';
 import { Btn, Card, Fld, G, SV, DIM, PLAYER_COLORS } from './UI';
 
-export default function SetupFlow({ lobbyState, onLeave }) {
+export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
     const { setupPhase, players, hostId, equalStack, maxPlayers, settings } = lobbyState;
-    const isHost = socket.id === hostId;
+    const activeId = activeSeatId || socket.id;
+    const isHost = activeId === hostId;
 
     // Configuring State (Host only)
     const [globalStack, setGlobalStack] = useState("1000");
@@ -28,8 +29,8 @@ export default function SetupFlow({ lobbyState, onLeave }) {
     }, [setupPhase]);
 
     const handleReady = () => {
-        const myPlayer = players.find(p => p.id === socket.id);
-        socket.emit("set_ready", !(myPlayer?.ready));
+        const myPlayer = players.find(p => p.id === activeId);
+        socket.emit("set_ready", { playerId: activeId, ready: !(myPlayer?.ready) });
     };
 
     const doLock = () => {
@@ -62,7 +63,7 @@ export default function SetupFlow({ lobbyState, onLeave }) {
     };
 
     if (setupPhase === 'waiting') {
-        const myPlayer = players.find(p => p.id === socket.id);
+        const myPlayer = players.find(p => p.id === activeId);
         const iAmReady = myPlayer?.ready || false;
         const nonHostPlayers = players.filter(p => !p.isHost);
         const hasNonHostPlayers = nonHostPlayers.length > 0;
@@ -82,7 +83,7 @@ export default function SetupFlow({ lobbyState, onLeave }) {
                                 <div key={p.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", background:"rgba(255,255,255,0.05)", padding:"10px 15px", borderRadius:10}}>
                                     <div style={{display:"flex", alignItems:"center", gap:10}}>
                                         <div style={{width:10, height:10, borderRadius:"50%", background:PLAYER_COLORS[i%PLAYER_COLORS.length]}}></div>
-                                        <span style={{color: p.id===socket.id ? G : "#fff", fontWeight:700}}>
+                                        <span style={{color: p.id===activeId ? G : (p.id===socket.id||p.id===socket.id+'_2') ? 'rgba(240,192,64,0.5)' : '#fff', fontWeight:700}}>
                                             {p.name} {p.isHost && <span style={{color:DIM, fontSize:11, marginLeft:4}}>(Host)</span>}
                                         </span>
                                     </div>
