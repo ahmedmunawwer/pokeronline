@@ -32,7 +32,7 @@ const TONE_STYLES = {
 };
 
 export default function GameTable({ gameState, emitAction, socket, myId, isHost, onLeave, appPlayerName, appRoomCode, activeSeatIdx }) {
-    const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver } = gameState;
+    const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver, roundActed } = gameState;
 
     const [rm, setRm] = useState(false);
     const [ra, setRa] = useState("");
@@ -71,6 +71,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
     const myConfirmed = confirmed.includes(myId);
     const activeWithChips = isBet ? players.filter(p => !p.folded && p.stack > 0).length : 0;
     const canRaiseBtn = isBet && !(curBet > lfb && (rBets[actI]||0) >= lfb) && activeWithChips > 1;
+    const isFirstActorOfRound = isMyTurn && (phase === 'flop' || phase === 'turn' || phase === 'river') && toCall === 0 && roundActed === 0;
 
     const effectivePots = (cp && cp.length > 0)
         ? cp
@@ -87,6 +88,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
     const doCall = () => emitAction('call');
     const doRaise = () => { emitAction('raise', ra); setRm(false); setRa(""); setMc(false); };
     const doAllIn = () => emitAction('allin');
+    const doAllCheck = () => emitAction('allcheck');
 
     const doConfirm = (d) => {
         setCdlg(null);
@@ -416,7 +418,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                             <div className="rail-section rail-section--actions">
                                 {isBet && actP && (
                                     isMyTurn
-                                        ? <RailActionBar toCall={toCall} raiseLabel={ba} canRaise={canRaiseBtn} onRaiseClick={()=>{if(canRaiseBtn)setRm(true);}} onCheck={doCheck} onCall={doCall} onFold={doFold} />
+                                        ? <RailActionBar toCall={toCall} raiseLabel={ba} canRaise={canRaiseBtn} onRaiseClick={()=>{if(canRaiseBtn)setRm(true);}} onCheck={doCheck} onCall={doCall} onFold={doFold} isFirstActorOfRound={isFirstActorOfRound} onAllCheck={doAllCheck} />
                                         : <RailWaitingStrip name={actP.name} />
                                 )}
                             </div>
@@ -741,7 +743,7 @@ function ActionButton({ color, primary, secondary, onClickFn, cornerLeft, corner
     );
 }
 
-function RailActionBar({ toCall, raiseLabel, canRaise, onRaiseClick, onCheck, onCall, onFold }) {
+function RailActionBar({ toCall, raiseLabel, canRaise, onRaiseClick, onCheck, onCall, onFold, isFirstActorOfRound, onAllCheck }) {
     return (
         <div style={{
             display:'flex',
@@ -766,13 +768,10 @@ function RailActionBar({ toCall, raiseLabel, canRaise, onRaiseClick, onCheck, on
                 onClickFn={onRaiseClick}
                 disabled={!canRaise}
             />
-            <ActionButton
-                color="#8b1a1a"
-                primary="Fold"
-                secondary={null}
-                onClickFn={onFold}
-                cornerRight
-            />
+            {isFirstActorOfRound
+                ? <ActionButton color="#1a5a3a" primary="All-Check" secondary={null} onClickFn={onAllCheck} cornerRight />
+                : <ActionButton color="#8b1a1a" primary="Fold" secondary={null} onClickFn={onFold} cornerRight />
+            }
         </div>
     );
 }
