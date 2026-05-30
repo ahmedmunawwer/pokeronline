@@ -248,7 +248,8 @@ module.exports = function(io) {
 
             // Ownership guard: socket must own the seat currently in queue
             const ownedSeats = room.socketSeats?.[socket.id];
-            if (ownedSeats && actI !== undefined && actI !== null && !ownedSeats.includes(data.playerId)) {
+            const isCeremony = ['reveal', 'award_win', 'split_win', 'next_hand', 'next_session', 'next_pot', 'undo'].includes(data.action);
+            if (ownedSeats && !isCeremony && actI !== undefined && actI !== null && !ownedSeats.includes(data.playerId)) {
                 console.warn('[player_action] socket', socket.id, 'tried to act for unowned seat', data.playerId);
                 return;
             }
