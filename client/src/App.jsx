@@ -293,6 +293,7 @@ function App() {
               >Switch</button>
             </>
           )}
+          <button onClick={() => window.location.reload()} style={{background:'rgba(33,150,243,0.15)',border:'1px solid rgba(33,150,243,0.35)',color:'#64b5f6',padding:'6px 8px',borderRadius:8,fontSize:14,fontWeight:700,cursor:'pointer'}}>↻</button>
           <button onClick={handleLeaveClick} style={{background:'rgba(211,47,47,0.2)',border:'1px solid rgba(211,47,47,0.5)',color:'#ff8a80',padding:'6px 12px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer'}}>Leave</button>
         </div>
       </div>
