@@ -41,12 +41,37 @@ function getSavedSession() {
   };
 }
 
-function hasPending(id, gs) {
+function hasPending(id, gs, lobbyState = null) {
+  if (lobbyState?.setupPhase === 'waiting') {
+    const isSecondary = id.endsWith('_2');
+    const secondaryPlayer = lobbyState.players?.find(p => p.id.endsWith('_2'));
+    if (secondaryPlayer) {
+      if (isSecondary && !secondaryPlayer.ready) return true;
+      if (!isSecondary && secondaryPlayer.ready) return true;
+    }
+  }
+  if (!gs) return false;
   const p = gs.players?.find(pl => pl.id === id);
   if (!p || p.inactive) return false;
   if (gs.queue?.[0] !== undefined && gs.players?.[gs.queue[0]]?.id === id) return true;
-  if ((gs.phase === 'end' || gs.phase === 'session_end') &&
-      gs.confirmations && !gs.confirmations.includes(id)) return true;
+  const revealPhases = ['preflop_start', 'flop_reveal', 'turn_reveal', 'river_reveal'];
+  if (revealPhases.includes(gs.phase) && id === gs.players?.[gs.dealer]?.id) return true;
+  if (gs.phase === 'showdown') {
+    const dealerPlayerId = gs.players?.[gs.dealer]?.id;
+    if (!gs.potAward && id === dealerPlayerId) return true;
+    if (gs.potAward) {
+      if (id !== dealerPlayerId &&
+          gs.potAward.eligibleIds?.includes(id) &&
+          !gs.confirmations?.includes(id)) return true;
+      if (id === dealerPlayerId) {
+        const totalApprovers = (gs.cp?.[gs.pi]?.eligible || [])
+          .filter(p => p.id !== dealerPlayerId && !p.folded && !p.inactive).length;
+        if ((gs.confirmations?.length ?? 0) >= totalApprovers) return true;
+      }
+    }
+  }
+  if (gs.phase === 'end' && gs.sn < gs.cfg?.sessions && id === gs.players?.[gs.dealer]?.id) return true;
+  if (gs.phase === 'session_end' && gs.sn < gs.cfg?.sessions && id === lobbyState?.hostId) return true;
   if (gs.restartApprovals !== undefined && !gs.restartApprovals.includes(id)) return true;
   return false;
 }
@@ -65,7 +90,7 @@ function App() {
     return v === '1' ? 1 : 0;
   });
   const [autoSwitch, setAutoSwitch] = useState(
-    () => sessionStorage.getItem('pokeronline_autoSwitch') === '1'
+    () => sessionStorage.getItem('pokeronline_autoSwitch') !== '0'
   );
 
   useEffect(() => {
@@ -130,15 +155,16 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!autoSwitch || mySeats.length !== 2 || !gameState) return;
+    if (!autoSwitch || mySeats.length !== 2) return;
+    if (!gameState && !lobbyState) return;
     const activeId   = activeSeatIdx === 0 ? socket.id : socket.id + '_2';
     const inactiveId = activeSeatIdx === 0 ? socket.id + '_2' : socket.id;
-    if (hasPending(inactiveId, gameState) && !hasPending(activeId, gameState)) {
+    if (hasPending(inactiveId, gameState, lobbyState) && !hasPending(activeId, gameState, lobbyState)) {
       const next = 1 - activeSeatIdx;
       setActiveSeatIdx(next);
       sessionStorage.setItem(ACTIVE_SEAT_KEY, String(next));
     }
-  }, [autoSwitch, gameState, activeSeatIdx, mySeats.length]);
+  }, [autoSwitch, gameState, lobbyState, activeSeatIdx, mySeats.length]);
 
   // Show spinner during ALL reconnects, not just the initial load — mid-game reconnects
   // briefly invalidate local seat identification because socket.id changes the moment the
@@ -195,16 +221,8 @@ function App() {
   const inactiveSeatId = mySeats.length === 2
     ? (activeSeatIdx === 0 ? socket.id + '_2' : socket.id)
     : null;
-  const switchPulse = mySeats.length === 2 && !!inactiveSeatId && !!gameState && (() => {
-    const gs = gameState;
-    const inactiveGsPlayer = gs.players?.find(p => p.id === inactiveSeatId);
-    if (!inactiveGsPlayer || inactiveGsPlayer.inactive) return false;
-    if (gs.queue?.[0] !== undefined && gs.players?.[gs.queue[0]]?.id === inactiveSeatId) return true;
-    if ((gs.phase === 'end' || gs.phase === 'session_end') &&
-        gs.confirmations && !gs.confirmations.includes(inactiveSeatId)) return true;
-    if (gs.restartApprovals !== undefined && !gs.restartApprovals.includes(inactiveSeatId)) return true;
-    return false;
-  })();
+  const switchPulse = mySeats.length === 2 && !!inactiveSeatId &&
+    hasPending(inactiveSeatId, gameState, lobbyState);
 
   const clearRoom = () => { setStallInfo(null); setLeaveDialog(null); setRoomCode(null); setLobbyState(null); setGameState(null); setMySeats([]); setActiveSeatIdx(0); setAutoSwitch(false); sessionStorage.removeItem('pokeronline_autoSwitch'); clearSession(); };
 
