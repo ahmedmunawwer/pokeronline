@@ -509,6 +509,7 @@ function awardFinal(state, wi2, pls, p) {
     const np = base.map((pl, i) => i === wi2 ? { ...pl, stack: pl.stack + p } : pl);
     state.players = np;
     state.pot = 0;
+    state.queue = [];
     state.wi = { name: np[wi2].name, amt: p };
     addLog(state, np[wi2].name + " wins " + p + "!");
     if (!checkBankruptcy(state, np, state.scores)) {
