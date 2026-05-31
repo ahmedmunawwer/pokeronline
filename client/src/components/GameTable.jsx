@@ -32,7 +32,7 @@ const TONE_STYLES = {
 };
 
 export default function GameTable({ gameState, emitAction, socket, myId, isHost, onLeave, appPlayerName, appRoomCode, activeSeatIdx }) {
-    const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver, skipPreflop } = gameState;
+    const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver, skipPreflop, handsThisSession } = gameState;
 
     const [rm, setRm] = useState(false);
     const [ra, setRa] = useState("");
@@ -238,7 +238,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                         <div style={{fontSize:10, color:DIM_STRONG, letterSpacing:1.2, fontWeight:700, textTransform:'uppercase', overflow:'hidden', textOverflow:'ellipsis'}}>
                             <span>Session {sn}/{cfg.sessions}</span>
                             <span style={{color:DIM, margin:'0 6px'}}>·</span>
-                            <span>Hand #{hn}</span>
+                            <span>{cfg.maxHandsPerSession ? `Hand ${handsThisSession||0}/${cfg.maxHandsPerSession}` : `Hand #${hn}`}</span>
                             <span style={{color:DIM, margin:'0 6px'}}>·</span>
                             <span style={{color:DIM_STRONG, fontWeight:600}}>Blinds {cfg.sb}/{cfg.bb}</span>
                         </div>

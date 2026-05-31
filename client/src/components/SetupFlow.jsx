@@ -12,6 +12,7 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
     const [sbVal, setSbVal] = useState("50");
     const [bbVal, setBbVal] = useState("100");
     const [sessVal, setSessVal] = useState("3");
+    const [maxHandsVal, setMaxHandsVal] = useState("");
     const [indivStacks, setIndivStacks] = useState({});
 
     // Countdown State
@@ -41,7 +42,9 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
 
     const doStartCountdown = () => {
         const sb=Number(sbVal), bb=Number(bbVal), sess=Number(sessVal);
+        const mhps = maxHandsVal === "" ? null : parseInt(maxHandsVal, 10);
         if(!sb||!bb||!sess||bb<=sb) return alert("BB > SB, sessions > 0");
+        if(maxHandsVal !== "" && (!(mhps > 0) || !Number.isInteger(mhps))) return alert("Max hands must be a positive integer, or leave blank for unlimited");
         
         let stacks = {};
         if (equalStack) {
@@ -57,7 +60,7 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
         }
 
         socket.emit("start_countdown", {
-            cfg: { sb, bb, sessions: sess },
+            cfg: { sb, bb, sessions: sess, maxHandsPerSession: mhps },
             stacks
         });
     };
@@ -174,7 +177,8 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
 
                         <Fld lbl="Small Blind" val={sbVal} ch={e=>{setSbVal(e.target.value);setBbVal(String(Number(e.target.value)*2));}} type="number"/>
                         <Fld lbl="Big Blind" val={bbVal} ch={e=>setBbVal(e.target.value)} type="number"/>
-                        <Fld lbl="Number of Sessions" val={sessVal} ch={e=>setSessVal(e.target.value)} type="number" mb={20}/>
+                        <Fld lbl="Number of Sessions" val={sessVal} ch={e=>setSessVal(e.target.value)} type="number"/>
+                        <Fld lbl="Max Hands per Session" val={maxHandsVal} ch={e=>setMaxHandsVal(e.target.value)} type="number" ph="∞ (unlimited)" mb={20}/>
                         
                         <Btn full onClick={doStartCountdown}>🏁 Start Game</Btn>
                     </Card>
@@ -196,6 +200,7 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
                             <div style={{color: DIM, fontSize: 13, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5}}>Settings</div>
                             <div style={{color: "#fff", fontSize: 16, fontWeight: 700}}>Blinds: {settings.cfg.sb} / {settings.cfg.bb}</div>
                             <div style={{color: "#fff", fontSize: 16, fontWeight: 700}}>Sessions: {settings.cfg.sessions}</div>
+                            {settings.cfg.maxHandsPerSession && <div style={{color: "#fff", fontSize: 16, fontWeight: 700}}>Max Hands/Session: {settings.cfg.maxHandsPerSession}</div>}
                         </div>
                     </Card>
                 </div>
