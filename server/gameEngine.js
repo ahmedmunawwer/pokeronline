@@ -474,7 +474,7 @@ function processAction(state, actionObj) {
         if (ci < 0) {
             state.pot = 0;
             state.pi = 0;
-            if (!checkBankruptcy(state, state.players, state.scores)) {
+            if (!checkBankruptcy(state, state.players, state.scores) && !checkMaxHands(state)) {
                 state.phase = "end";
             }
         } else {
@@ -484,6 +484,7 @@ function processAction(state, actionObj) {
         startHand(state);
     } else if (action === 'next_session') {
         state.sn++;
+        state.handsThisSession = 0;
         state.players = state.players.map(p => ({ ...p, stack: state.origSt[p.id] || 0 }));
         startHand(state);
     }
@@ -504,6 +505,20 @@ function checkBankruptcy(state, np, sc) {
     return true;
 }
 
+function checkMaxHands(state) {
+    const max = state.cfg?.maxHandsPerSession;
+    if (!max) return false;
+    if ((state.handsThisSession || 0) < max) return false;
+    const sorted = state.players.slice().sort((a, b) => b.stack - a.stack);
+    const pts = calcSPts(sorted);
+    const ns = { ...state.scores };
+    sorted.forEach(p => { ns[p.id] = (ns[p.id] || 0) + (pts[p.id] || 0); });
+    state.scores = ns;
+    state.sei = { rankings: sorted, pts, ns };
+    state.phase = "session_end";
+    return true;
+}
+
 function awardFinal(state, wi2, pls, p) {
     const base = pls || state.players;
     const np = base.map((pl, i) => i === wi2 ? { ...pl, stack: pl.stack + p } : pl);
@@ -512,7 +527,7 @@ function awardFinal(state, wi2, pls, p) {
     state.queue = [];
     state.wi = { name: np[wi2].name, amt: p };
     addLog(state, np[wi2].name + " wins " + p + "!");
-    if (!checkBankruptcy(state, np, state.scores)) {
+    if (!checkBankruptcy(state, np, state.scores) && !checkMaxHands(state)) {
         state.phase = "end";
     }
 }
@@ -560,7 +575,7 @@ function runRem(state, idx, pls, fw, fa, fhr) {
     state.pot = 0;
     if (ci < 0) {
         state.wi = { name: fw, amt: fa, hr: fhr || null };
-        if (!checkBankruptcy(state, cur, state.scores)) {
+        if (!checkBankruptcy(state, cur, state.scores) && !checkMaxHands(state)) {
             state.phase = "end";
         }
         state.pi = 0;
@@ -630,6 +645,7 @@ function startHand(state) {
     state.queue = []; // Wait for 'reveal'
     state.phase = "preflop_start";
     state.hn++;
+    state.handsThisSession = (state.handsThisSession || 0) + 1;
     state.wi = null;
     state.hc = { [pls[si].id]: sa, [pls[bi].id]: ba2 };
     state.ai = [];
@@ -678,6 +694,7 @@ function startHand(state) {
 function restartGame(state) {
     state.sn = 1;
     state.hn = 0;
+    state.handsThisSession = 0;
     state.scores = {};
     state.history = [];
     state.confirmations = [];
