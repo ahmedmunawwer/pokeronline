@@ -345,12 +345,6 @@ function processAction(state, actionObj) {
             addLog(state, state.players[i].name + " calls $" + ac + (state.lastBetInfo ? " (" + state.lastBetInfo.name + "'s " + state.lastBetInfo.label + ")" : "") + " (ALL IN)");
             advance(state, state.queue.slice(1).filter(j => !np[j].folded && np[j].stack > 0), np, state.phase, nHC, nAI, nRB);
         }
-    } else if (action === 'allcheck') {
-        if (state.roundActed !== 0 || state.curBet !== 0) return false;
-        addAct(state, state.players[actI].id, "allcheck", 0);
-        addLog(state, "All check");
-        advance(state, [], state.players, state.phase, state.hc, state.ai, state.rBets);
-
     } else if (action === 'reveal') {
         const bp = state.phase === 'preflop_start' ? 'preflop' : state.phase.replace("_reveal", "");
         
@@ -374,7 +368,6 @@ function processAction(state, actionObj) {
         }
         
         state.phase = bp;
-        state.roundActed = 0;
         const n = state.players.length;
         const q = [];
         
@@ -495,9 +488,6 @@ function processAction(state, actionObj) {
         startHand(state);
     }
 
-    if (!['reveal', 'award_win', 'split_win', 'next_hand', 'next_session', 'next_pot', 'allcheck'].includes(action)) {
-        state.roundActed = (state.roundActed || 0) + 1;
-    }
     return true;
 }
 

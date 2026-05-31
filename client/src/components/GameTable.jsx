@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ConfirmDialog from './ConfirmDialog';
 import PhaseModal from './PhaseModal';
 import { Btn, Card, Ov, DB, HoleCard, CommCard, getCommunityCards, CDlg, SSDlg, HRDlg, StatsMod, ChipStackSVG, PLAYER_COLORS, G, SV, BR, DIM, MED, PL, RVLI, HandRankModal, buildPots, PotDetailModal, HandHistoryModal } from './UI';
@@ -32,7 +32,7 @@ const TONE_STYLES = {
 };
 
 export default function GameTable({ gameState, emitAction, socket, myId, isHost, onLeave, appPlayerName, appRoomCode, activeSeatIdx }) {
-    const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver, roundActed, skipPreflop } = gameState;
+    const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver, skipPreflop } = gameState;
 
     const [rm, setRm] = useState(false);
     const [ra, setRa] = useState("");
@@ -71,7 +71,21 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
     const myConfirmed = confirmed.includes(myId);
     const activeWithChips = isBet ? players.filter(p => !p.folded && p.stack > 0).length : 0;
     const canRaiseBtn = isBet && !(curBet > lfb && (rBets[actI]||0) >= lfb) && activeWithChips > 1;
-    const isFirstActorOfRound = isMyTurn && (phase === 'flop' || phase === 'turn' || phase === 'river') && toCall === 0 && roundActed === 0;
+    const myPlayerInHand = players?.find(p => p.id === myId);
+    const iAmInHand = isBet && myPlayerInHand && !myPlayerInHand.folded && !myPlayerInHand.inactive && myPlayerInHand.stack > 0;
+
+    const [preClick, setPreClick] = useState(null);
+    useEffect(() => { setPreClick(null); }, [phase]);
+
+    const prevIsMyTurn = useRef(false);
+    useEffect(() => {
+        if (!prevIsMyTurn.current && isMyTurn && preClick) {
+            if (preClick === 'fold') { emitAction('fold'); }
+            else if (preClick === 'check' && toCall === 0) { emitAction('check'); }
+            setPreClick(null);
+        }
+        prevIsMyTurn.current = isMyTurn;
+    }, [isMyTurn, preClick, toCall]);
 
     const effectivePots = (cp && cp.length > 0)
         ? cp
@@ -88,8 +102,6 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
     const doCall = () => emitAction('call');
     const doRaise = () => { emitAction('raise', ra); setRm(false); setRa(""); setMc(false); };
     const doAllIn = () => emitAction('allin');
-    const doAllCheck = () => emitAction('allcheck');
-
     const doConfirm = (d) => {
         setCdlg(null);
         if(d.type==="winner") { setHrd({wi:d.id, name:d.name, amt:d.amt, label:d.label, tier:0}); }
@@ -419,8 +431,10 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                             <div className="rail-section rail-section--actions">
                                 {isBet && actP && (
                                     isMyTurn
-                                        ? <RailActionBar toCall={toCall} raiseLabel={ba} canRaise={canRaiseBtn} onRaiseClick={()=>{if(canRaiseBtn)setRm(true);}} onCheck={doCheck} onCall={doCall} onFold={doFold} isFirstActorOfRound={isFirstActorOfRound} onAllCheck={doAllCheck} />
-                                        : <RailWaitingStrip name={actP.name} />
+                                        ? <RailActionBar toCall={toCall} raiseLabel={ba} canRaise={canRaiseBtn} onRaiseClick={()=>{if(canRaiseBtn)setRm(true);}} onCheck={doCheck} onCall={doCall} onFold={doFold} />
+                                        : iAmInHand
+                                            ? <RailPreClickBar raiseLabel={ba} preClick={preClick} onToggleCheck={()=>setPreClick(v=>v==='check'?null:'check')} onToggleFold={()=>setPreClick(v=>v==='fold'?null:'fold')} />
+                                            : <RailWaitingStrip name={actP.name} />
                                 )}
                             </div>
 
@@ -710,7 +724,7 @@ function CornerBadge({ corner, bg, fg, children }) {
     );
 }
 
-function ActionButton({ color, primary, secondary, onClickFn, cornerLeft, cornerRight, disabled }) {
+function ActionButton({ color, primary, secondary, onClickFn, cornerLeft, cornerRight, disabled, highlighted }) {
     const [hover, setHover] = React.useState(false);
     return (
         <button
@@ -734,7 +748,9 @@ function ActionButton({ color, primary, secondary, onClickFn, cornerLeft, corner
                 gap:1,
                 transition:'background 120ms ease, transform 80ms ease',
                 transform: hover && !disabled ? 'translateY(-1px)' : 'translateY(0)',
-                boxShadow:'inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -2px 0 rgba(0,0,0,0.25)',
+                boxShadow: highlighted
+                    ? 'inset 0 0 0 2px rgba(240,192,64,0.85), 0 0 8px rgba(240,192,64,0.35)'
+                    : 'inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -2px 0 rgba(0,0,0,0.25)',
                 padding:'0 8px'
             }}
         >
@@ -744,7 +760,7 @@ function ActionButton({ color, primary, secondary, onClickFn, cornerLeft, corner
     );
 }
 
-function RailActionBar({ toCall, raiseLabel, canRaise, onRaiseClick, onCheck, onCall, onFold, isFirstActorOfRound, onAllCheck }) {
+function RailActionBar({ toCall, raiseLabel, canRaise, onRaiseClick, onCheck, onCall, onFold }) {
     return (
         <div style={{
             display:'flex',
@@ -769,10 +785,17 @@ function RailActionBar({ toCall, raiseLabel, canRaise, onRaiseClick, onCheck, on
                 onClickFn={onRaiseClick}
                 disabled={!canRaise}
             />
-            {isFirstActorOfRound
-                ? <ActionButton color="#1a5a3a" primary="All-Check" secondary={null} onClickFn={onAllCheck} cornerRight />
-                : <ActionButton color="#8b1a1a" primary="Fold" secondary={null} onClickFn={onFold} cornerRight />
-            }
+            <ActionButton color="#8b1a1a" primary="Fold" secondary={null} onClickFn={onFold} cornerRight />
+        </div>
+    );
+}
+
+function RailPreClickBar({ raiseLabel, preClick, onToggleCheck, onToggleFold }) {
+    return (
+        <div style={{display:'flex',height:56,margin:'-10px -12px 0 -12px',borderTopLeftRadius:'inherit',borderTopRightRadius:'inherit',borderBottom:'1px solid rgba(240,192,64,0.18)',overflow:'hidden'}}>
+            <ActionButton color="#1565c0" primary="Check" secondary={null} onClickFn={onToggleCheck} highlighted={preClick==='check'} cornerLeft />
+            <ActionButton color="#b8880e" primary={raiseLabel||'Raise'} secondary={null} onClickFn={null} disabled />
+            <ActionButton color="#8b1a1a" primary="Fold" secondary={null} onClickFn={onToggleFold} highlighted={preClick==='fold'} cornerRight />
         </div>
     );
 }
