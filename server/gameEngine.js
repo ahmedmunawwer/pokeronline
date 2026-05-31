@@ -655,11 +655,34 @@ function startHand(state) {
     state.lastBetInfo = null;
 
     state.log = [
-        "BB: " + (pls[bi] ? pls[bi].name : "None") + " (" + ba2 + ")", 
-        "SB: " + (pls[si] ? pls[si].name : "None") + " (" + sa + ")", 
-        "Dealer: " + pls[dI].name, 
+        "BB: " + (pls[bi] ? pls[bi].name : "None") + " (" + ba2 + ")",
+        "SB: " + (pls[si] ? pls[si].name : "None") + " (" + sa + ")",
+        "Dealer: " + pls[dI].name,
         "─ Hand #" + state.hn + " | Sess " + state.sn + "/" + c.sessions + " ─"
     ];
+
+    if (state.skipPreflop) {
+        let np2 = state.players.map(p => ({ ...p }));
+        for (let i = 0; i < np2.length; i++) {
+            if (np2[i].folded) continue;
+            if (i === state.bbI) continue;
+            const alreadyIn = state.rBets[i] || 0;
+            const toCall = state.curBet - alreadyIn;
+            if (toCall <= 0) continue;
+            const amt = Math.min(toCall, np2[i].stack);
+            if (amt <= 0) continue;
+            np2[i] = { ...np2[i], stack: np2[i].stack - amt };
+            state.pot += amt;
+            state.hc[np2[i].id] = (state.hc[np2[i].id] || 0) + amt;
+            state.rBets[i] = alreadyIn + amt;
+            if (np2[i].stack === 0 && !state.ai.includes(np2[i].id)) {
+                state.ai.push(np2[i].id);
+            }
+        }
+        state.players = np2;
+        state.phase = "flop_reveal";
+        addLog(state, "Preflop skipped — all called BB ($" + c.bb + ")");
+    }
 }
 
 function restartGame(state) {

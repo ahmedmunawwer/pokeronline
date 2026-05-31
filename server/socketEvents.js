@@ -397,6 +397,17 @@ module.exports = function(io) {
             if (callback) callback({ success: true });
         });
 
+        socket.on('set_skip_preflop', (data) => {
+            if (!socket.currentRoom) return;
+            const room = roomManager.getRoom(socket.currentRoom);
+            if (rejectIfStalled(socket, room)) return;
+            if (!room || room.hostId !== socket.id) return;
+            const gs = room.gameState;
+            if (!gs) return;
+            gs.skipPreflop = !!data?.enabled;
+            io.to(socket.currentRoom).emit('game_state_update', gs);
+        });
+
         // --- Save / Load ---
         socket.on('save_game', (callback) => {
             if (!socket.currentRoom) return callback({ success: false, message: 'Not in a room' });
