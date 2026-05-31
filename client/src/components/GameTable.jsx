@@ -32,7 +32,7 @@ const TONE_STYLES = {
 };
 
 export default function GameTable({ gameState, emitAction, socket, myId, isHost, onLeave, appPlayerName, appRoomCode, activeSeatIdx }) {
-    const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver, roundActed } = gameState;
+    const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver, roundActed, skipPreflop } = gameState;
 
     const [rm, setRm] = useState(false);
     const [ra, setRa] = useState("");
@@ -234,6 +234,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                     <div style={{display:'flex', gap:6, alignItems:'center', flexShrink:0}}>
                         {isHost && <button onClick={()=>setShowUndoDlg(true)} style={{background:'rgba(255,255,255,0.10)',border:'1px solid rgba(255,255,255,0.30)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>↩️</button>}
                         {isHost && <button onClick={()=>socket.emit('save_game',(res)=>{if(res.success)alert('Game saved! ID: '+res.saveId);else alert('Save failed: '+res.message);})} style={{background:'rgba(100,180,100,0.14)',border:'1px solid rgba(100,180,100,0.36)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>💾</button>}
+                        {isHost && <button onClick={()=>socket.emit('set_skip_preflop', { enabled: !skipPreflop })} style={{background:skipPreflop?'rgba(240,192,64,0.25)':'rgba(255,255,255,0.10)',border:`1px solid ${skipPreflop?'rgba(240,192,64,0.6)':'rgba(255,255,255,0.30)'}`,borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>⏭</button>}
                         <button onClick={()=>setShowHandRank(true)} style={{background:'rgba(240,192,64,0.12)',border:'1px solid rgba(240,192,64,0.32)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>🃏</button>
                         <button onClick={()=>setShowHandHistory(true)} style={{background:'rgba(240,192,64,0.20)',border:'1px solid rgba(240,192,64,0.45)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>📈</button>
                         <button onClick={()=>setShowStats(true)} style={{background:'rgba(240,192,64,0.20)',border:'1px solid rgba(240,192,64,0.45)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>📊</button>
