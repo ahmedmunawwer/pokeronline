@@ -176,23 +176,29 @@ module.exports = function(io) {
             room.settings = settings; // Store settings to broadcast
             io.to(socket.currentRoom).emit('lobby_update', room);
 
+            // Snapshot pId→stack now, while socket IDs and settings.stacks are in sync.
+            // sync_reconnect may remap room.players[i].id before the timeout fires; pId is stable.
+            const stackByPId = {};
+            room.players.forEach(p => {
+                if (settings.stacks[p.id] !== undefined) stackByPId[p.pId] = settings.stacks[p.id];
+            });
+
             // 5 second countdown before actual game start
             setTimeout(() => {
                 const liveRoom = roomManager.getRoom(socket.currentRoom);
                 if (!liveRoom) return;
 
                 liveRoom.setupPhase = 'in_game';
-                
+
                 const { startHand } = require('./gameEngine');
                 liveRoom.gameState.cfg = settings.cfg;
-                
+
                 // Construct players array for gameEngine
-                const gamePlayers = liveRoom.players.map((p, i) => ({
-                    id: p.id,
-                    name: p.name,
-                    stack: settings.stacks[p.id],
-                    folded: false
-                }));
+                const gamePlayers = liveRoom.players.map((p) => {
+                    const stack = stackByPId[p.pId];
+                    if (stack === undefined) console.warn('[start_countdown] missing stack for pId=' + p.pId + ' name=' + p.name);
+                    return { id: p.id, name: p.name, stack: stack ?? 0, folded: false };
+                });
                 liveRoom.gameState.players = gamePlayers;
                 
                 const os = {}, is = {};
