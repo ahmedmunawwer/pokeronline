@@ -223,24 +223,88 @@ const HoleCard = ({up}) => (
           const hf={};pArr.forEach(p=>{const f={};p.hr.forEach(r=>{f[r]=(f[r]||0)+1;});hf[p.id]=Object.entries(f).sort((a,b)=>b[1]-a[1])[0]||null;});
           return{pArr,maxH,top,topAll,hf,sessionsPlayed:Object.keys(sc).length,handsPerSession:sc,bestH:hist.filter(h=>h.hr).sort((a,b)=>(RV[b.hr]||0)-(RV[a.hr]||0))[0]||null,consistent:pArr.filter(p=>p.hp>0).sort((a,b)=>(b.won/b.hp)-(a.won/a.hp))[0]||null,inconsistent:pArr.filter(p=>p.hp>0).sort((a,b)=>(a.won/a.hp)-(b.won/b.hp))[0]||null};
         }
-        function StatsMod({hist,pls,scores,onClose}){
+        function StatsMod({hist,pls,scores,sessionHistory,onClose}){
+          const [activeTab,setActiveTab]=useState('stats');
+          const [showBreakdown,setShowBreakdown]=useState(false);
           const st=computeStats(hist,pls);
           const actN=pls.filter(p=>!p.inactive).length;
           const fmtT=(fn,vFn,skipZero)=>{if(!st)return"—";const tied=st.topAll(fn);if(!tied.length)return"—";const val=fn(tied[0]);if(skipZero&&val===0)return"—";const names=tied.length>=actN&&actN>0?"Everyone":tied.map(p=>p.name).join(" & ");return names+" ("+(vFn?vFn(val):val)+")";};
           const lowBet=(()=>{if(!st)return"—";const b=st.pArr.filter(p=>p.bet>0);if(!b.length)return"—";const mn=Math.min(...b.map(p=>p.bet));const tied=b.filter(p=>p.bet===mn);return(tied.length>=actN&&actN>0?"Everyone":tied.map(p=>p.name).join(" & "))+" ("+mn+")";})();
           const hpsStr=st?Object.entries(st.handsPerSession).sort((a,b)=>Number(a[0])-Number(b[0])).map(e=>e[1]).join(" / "):"—";
-          return(<Ov><DB><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><span style={{color:G,fontWeight:800,fontSize:16}}>📊 Statistics</span><Btn sm bg="#333" onClick={onClose}>✕</Btn></div>
-          <div style={{maxHeight:"72vh",overflowY:"auto"}}>
-          {!st?<p style={{color:DIM,fontSize:13}}>No hands yet.</p>:<div>
-            <SS title="📋 Overview"><SR l="Sessions played" v={String(st.sessionsPlayed)} hi/><SR l="Hands per session" v={hpsStr}/></SS>
-            <SS title="🏆 Performance"><SR l="Most won" v={fmtT(p=>p.won,v=>v)} hi/><SR l="Most lost" v={fmtT(p=>p.lost,v=>v)}/><SR l="Most consistent" v={st.consistent?st.consistent.name:"—"} hi/><SR l="Most inconsistent" v={st.inconsistent?st.inconsistent.name:"—"}/><SR l="Max hands/session" v={String(st.maxH)}/></SS>
-            <SS title="💰 Money"><SR l="Biggest single win" v={fmtT(p=>p.bw,v=>"+"+v,true)} hi/><SR l="Biggest single loss" v={fmtT(p=>p.bl,v=>"-"+v,true)}/><SR l="Highest total bets" v={fmtT(p=>p.bet,v=>v)} hi/><SR l="Lowest total bets" v={lowBet}/><SR l="Biggest single bet" v={fmtT(p=>p.bs,v=>v)}/></SS>
-            <SS title="🎲 Actions"><SR l="Most raises" v={fmtT(p=>p.raises,v=>v)} hi/><SR l="Most checks" v={fmtT(p=>p.checks,v=>v)}/><SR l="Most folds" v={fmtT(p=>p.folds,v=>v)}/></SS>
-            <SS title="🃏 Best Hand Ever"><SR l="Hand" v={st.bestH?st.bestH.wname+": "+st.bestH.hr:"None"} hi/></SS>
-            <SS title="🎯 Fav Winning Hand">{st.pArr.map(p=><SR key={p.id} l={p.name} v={st.hf[p.id]?st.hf[p.id][0]+" ×"+st.hf[p.id][1]:"—"}/>)}</SS>
-            <SS title="🏅 Scores">{pls.slice().sort((a,b)=>(scores[b.id]||0)-(scores[a.id]||0)).map((p,i)=><SR key={p.id} l={MED[i]+" "+p.name} v={(scores[p.id]||0)+" pts"} hi={i===0}/>)}</SS>
-          </div>}
-          </div></DB></Ov>);
+          const sh=sessionHistory||[];
+          const sortedPls=pls.slice().sort((a,b)=>(scores[b.id]||0)-(scores[a.id]||0));
+          const maxSn=sh.length?Math.max(...sh.map(h=>h.sn)):0;
+          const snCols=maxSn>0?Array.from({length:maxSn},(_,i)=>i+1):[];
+          return(<Ov><DB>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{color:G,fontWeight:800,fontSize:16}}>{activeTab==='stats'?'📊 Statistics':showBreakdown?'📋 Breakdown':'🏅 Points'}</span>
+              <Btn sm bg="#333" onClick={onClose}>✕</Btn>
+            </div>
+            <div style={{display:"flex",gap:20,marginBottom:12,borderBottom:"1px solid rgba(255,255,255,0.1)",paddingBottom:8}}>
+              {['stats','points'].map(tab=>(
+                <button key={tab} onClick={()=>{setActiveTab(tab);setShowBreakdown(false);}} style={{background:"none",border:"none",padding:"0 0 4px",fontSize:13,fontWeight:700,cursor:"pointer",color:activeTab===tab?G:DIM,borderBottom:activeTab===tab?`2px solid ${G}`:"2px solid transparent"}}>{tab==='stats'?'Stats':'Points'}</button>
+              ))}
+            </div>
+            {activeTab==='stats'&&<div style={{maxHeight:"66vh",overflowY:"auto"}}>
+              {!st?<p style={{color:DIM,fontSize:13}}>No hands yet.</p>:<div>
+                <SS title="📋 Overview"><SR l="Sessions played" v={String(st.sessionsPlayed)} hi/><SR l="Hands per session" v={hpsStr}/></SS>
+                <SS title="🏆 Performance"><SR l="Most won" v={fmtT(p=>p.won,v=>v)} hi/><SR l="Most lost" v={fmtT(p=>p.lost,v=>v)}/><SR l="Most consistent" v={st.consistent?st.consistent.name:"—"} hi/><SR l="Most inconsistent" v={st.inconsistent?st.inconsistent.name:"—"}/><SR l="Max hands/session" v={String(st.maxH)}/></SS>
+                <SS title="💰 Money"><SR l="Biggest single win" v={fmtT(p=>p.bw,v=>"+"+v,true)} hi/><SR l="Biggest single loss" v={fmtT(p=>p.bl,v=>"-"+v,true)}/><SR l="Highest total bets" v={fmtT(p=>p.bet,v=>v)} hi/><SR l="Lowest total bets" v={lowBet}/><SR l="Biggest single bet" v={fmtT(p=>p.bs,v=>v)}/></SS>
+                <SS title="🎲 Actions"><SR l="Most raises" v={fmtT(p=>p.raises,v=>v)} hi/><SR l="Most checks" v={fmtT(p=>p.checks,v=>v)}/><SR l="Most folds" v={fmtT(p=>p.folds,v=>v)}/></SS>
+                <SS title="🃏 Best Hand Ever"><SR l="Hand" v={st.bestH?st.bestH.wname+": "+st.bestH.hr:"None"} hi/></SS>
+                <SS title="🎯 Fav Winning Hand">{st.pArr.map(p=><SR key={p.id} l={p.name} v={st.hf[p.id]?st.hf[p.id][0]+" ×"+st.hf[p.id][1]:"—"}/>)}</SS>
+                <SS title="🏅 Scores">{pls.slice().sort((a,b)=>(scores[b.id]||0)-(scores[a.id]||0)).map((p,i)=><SR key={p.id} l={MED[i]+" "+p.name} v={(scores[p.id]||0)+" pts"} hi={i===0}/>)}</SS>
+              </div>}
+            </div>}
+            {activeTab==='points'&&!showBreakdown&&<div>
+              <div style={{maxHeight:"60vh",overflowY:"auto",marginBottom:12}}>
+                {sortedPls.map((p,i)=>(
+                  <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                    <span style={{color:"#fff",fontWeight:i===0?700:400}}>{MED[i]} {p.name}</span>
+                    <span style={{color:G,fontWeight:700,fontSize:15}}>{scores[p.id]||0} pts</span>
+                  </div>
+                ))}
+              </div>
+              {snCols.length>0&&<Btn full bg="#333" onClick={()=>setShowBreakdown(true)}>Breakdown →</Btn>}
+            </div>}
+            {activeTab==='points'&&showBreakdown&&<div>
+              <button onClick={()=>setShowBreakdown(false)} style={{background:"none",border:"none",color:G,fontSize:13,cursor:"pointer",padding:"0 0 10px",fontWeight:700}}>← Back</button>
+              {snCols.length===0?<p style={{color:DIM,fontSize:13}}>No sessions completed yet.</p>:(
+                <div style={{display:"flex",maxHeight:"66vh",overflowY:"auto"}}>
+                  <div style={{flexShrink:0,width:90}}>
+                    <div style={{height:24}}/>
+                    {sortedPls.map(p=>(
+                      <div key={p.id} style={{height:34,display:"flex",alignItems:"center",fontSize:12,color:"#fff",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:4}}>{p.name}</div>
+                    ))}
+                  </div>
+                  <div style={{flex:1,overflowX:"auto"}}>
+                    <div style={{minWidth:snCols.length*44}}>
+                      <div style={{display:"flex",height:24,alignItems:"flex-end",paddingBottom:4,borderBottom:"1px solid rgba(255,255,255,0.12)",marginBottom:2}}>
+                        {snCols.map(sn=><div key={sn} style={{width:44,flexShrink:0,textAlign:"center",color:G,fontWeight:700,fontSize:11}}>S{sn}</div>)}
+                      </div>
+                      {sortedPls.map(p=>(
+                        <div key={p.id} style={{display:"flex",alignItems:"center",height:34,borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                          {snCols.map(colSn=>{
+                            const entry=sh.find(h=>h.sn===colSn);
+                            const hasScore=entry&&entry.scores[p.id]!==undefined;
+                            const val=hasScore?entry.scores[p.id]:null;
+                            const isTotal=entry?.isTotal;
+                            return(
+                              <div key={colSn} style={{width:44,flexShrink:0,textAlign:"center"}}>
+                                {!hasScore?<span style={{color:DIM,fontSize:12}}>—</span>:isTotal?(
+                                  <span><span style={{color:G,fontWeight:700,fontSize:12}}>{val}</span><span style={{color:DIM,fontSize:9,display:"block",lineHeight:1}}>total</span></span>
+                                ):<span style={{color:"#fff",fontSize:12,fontWeight:600}}>{val}</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>}
+          </DB></Ov>);
         }
         function CDlg({d,onClose,onConfirm}){return(<Ov><DB><div style={{textAlign:"center"}}>
           <div style={{fontSize:40,marginBottom:8}}>{d.type==="winner"?"🏆":"🤝"}</div>

@@ -32,7 +32,7 @@ const TONE_STYLES = {
 };
 
 export default function GameTable({ gameState, emitAction, socket, myId, isHost, onLeave, appPlayerName, appRoomCode, activeSeatIdx }) {
-    const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver, skipPreflop, handsThisSession } = gameState;
+    const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, sessionHistory, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver, skipPreflop, handsThisSession } = gameState;
 
     const [rm, setRm] = useState(false);
     const [ra, setRa] = useState("");
@@ -209,7 +209,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
               <Btn full bg="#333" onClick={()=>setGoView("scores")}>📋 Scoreboard</Btn>
               <Btn full bg="#333" onClick={()=>setShowStats(true)}>📊 Statistics</Btn>
             </div>
-            {showStats&&<StatsMod hist={history} pls={players} scores={scores} onClose={()=>setShowStats(false)}/>}
+            {showStats&&<StatsMod hist={history} pls={players} scores={scores} sessionHistory={sessionHistory??[]} onClose={()=>setShowStats(false)}/>}
           </div>
         </div>);
     }
@@ -228,7 +228,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
             <div className="gt-shell">
 
                 {/* ── Modals and overlays (unchanged) ─────────────────────── */}
-                {showStats && <StatsMod hist={history} pls={players} scores={scores} onClose={()=>setShowStats(false)}/>}
+                {showStats && <StatsMod hist={history} pls={players} scores={scores} sessionHistory={sessionHistory??[]} onClose={()=>setShowStats(false)}/>}
                 {showHandRank && <HandRankModal onClose={()=>setShowHandRank(false)}/>}
                 {showHandHistory && <HandHistoryModal history={history} currentSn={sn} onClose={()=>setShowHandHistory(false)}/>}
                 {showPotModal && hasMultiplePots && <PotDetailModal pots={effectivePots} players={players} onClose={()=>setShowPotModal(false)}/>}
@@ -694,7 +694,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                     {sn<cfg.sessions ? (isHost ? <Btn full onClick={nextSession}>Next Session ({sn+1}/{cfg.sessions}) →</Btn> : <div style={{flex:1,textAlign:'center',color:DIM,fontSize:13,padding:'8px 0'}}>⏳ Waiting for host to start next session...</div>) : null}
                     <Btn bg="#333" onClick={()=>setShowStats(true)}>📊</Btn>
                 </div>
-                {showStats&&<StatsMod hist={history} pls={players} scores={sei.ns} onClose={()=>setShowStats(false)}/>}
+                {showStats&&<StatsMod hist={history} pls={players} scores={sei.ns} sessionHistory={sessionHistory??[]} onClose={()=>setShowStats(false)}/>}
             </PhaseModal>}
 
         </div>
