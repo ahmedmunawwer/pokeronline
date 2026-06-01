@@ -485,6 +485,7 @@ function processAction(state, actionObj) {
     } else if (action === 'next_session') {
         state.sn++;
         state.handsThisSession = 0;
+        state.history = [];
         state.players = state.players.map(p => ({ ...p, stack: state.origSt[p.id] || 0 }));
         startHand(state);
     }

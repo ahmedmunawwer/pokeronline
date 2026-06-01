@@ -515,6 +515,7 @@ module.exports = function(io) {
 
             // Remap IDs in game state
             saveManager.remapPlayerIds(room.gameState, nameToNewId);
+            room.gameState.history = (room.gameState.history || []).filter(h => h.sn === room.gameState.sn);
             room.gameState.confirmations = [];
             room.setupPhase = 'in_game';
 
