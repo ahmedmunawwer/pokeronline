@@ -242,7 +242,13 @@ module.exports = function(io) {
                         });
                         liveRoom.gameState.scores = cumScores;
                     } else if (ps.mode === 'total') {
-                        liveRoom.gameState.scores = remapScores(ps.totalScores);
+                        const remapped = remapScores(ps.totalScores);
+                        liveRoom.gameState.scores = remapped;
+                        liveRoom.gameState.sessionHistory = [{
+                            sn: settings.startFromSession - 1,
+                            scores: remapped,
+                            isTotal: true
+                        }];
                     }
                 }
 
