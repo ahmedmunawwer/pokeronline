@@ -502,6 +502,8 @@ function checkBankruptcy(state, np, sc) {
     
     state.scores = ns;
     state.sei = { rankings: sorted, pts, ns };
+    if (!state.sessionHistory) state.sessionHistory = [];
+    state.sessionHistory.push({ sn: state.sn, scores: pts });
     state.phase = "session_end";
     return true;
 }
@@ -516,6 +518,8 @@ function checkMaxHands(state) {
     sorted.forEach(p => { ns[p.id] = (ns[p.id] || 0) + (pts[p.id] || 0); });
     state.scores = ns;
     state.sei = { rankings: sorted, pts, ns };
+    if (!state.sessionHistory) state.sessionHistory = [];
+    state.sessionHistory.push({ sn: state.sn, scores: pts });
     state.phase = "session_end";
     return true;
 }
@@ -698,6 +702,7 @@ function restartGame(state) {
     state.handsThisSession = 0;
     state.scores = {};
     state.history = [];
+    state.sessionHistory = [];
     state.confirmations = [];
 
     state.players = state.players.map(p => ({

@@ -182,6 +182,8 @@ module.exports = function(io) {
             room.players.forEach(p => {
                 if (settings.stacks[p.id] !== undefined) stackByPId[p.pId] = settings.stacks[p.id];
             });
+            const oldIdToPId = {};
+            room.players.forEach(p => { oldIdToPId[p.id] = p.pId; });
 
             // 5 second countdown before actual game start
             setTimeout(() => {
@@ -208,7 +210,42 @@ module.exports = function(io) {
                 });
                 liveRoom.gameState.origSt = os;
                 liveRoom.gameState.scores = is;
-                
+
+                liveRoom.gameState.sessionHistory = [];
+
+                if (settings.startFromSession) {
+                    liveRoom.gameState.sn = settings.startFromSession;
+                }
+
+                if (settings.presetScores) {
+                    const pIdToNewId = {};
+                    liveRoom.players.forEach(p => { pIdToNewId[p.pId] = p.id; });
+                    const remapScores = (raw) => {
+                        const out = {};
+                        Object.entries(raw || {}).forEach(([oldId, v]) => {
+                            const newId = pIdToNewId[oldIdToPId[oldId]] || oldId;
+                            out[newId] = v;
+                        });
+                        return out;
+                    };
+                    const ps = settings.presetScores;
+                    if (ps.mode === 'per_session') {
+                        liveRoom.gameState.sessionHistory = (ps.sessionHistory || []).map(entry => ({
+                            sn: entry.sn,
+                            scores: remapScores(entry.scores)
+                        }));
+                        const cumScores = {};
+                        liveRoom.gameState.sessionHistory.forEach(entry => {
+                            Object.entries(entry.scores).forEach(([id, v]) => {
+                                cumScores[id] = (cumScores[id] || 0) + v;
+                            });
+                        });
+                        liveRoom.gameState.scores = cumScores;
+                    } else if (ps.mode === 'total') {
+                        liveRoom.gameState.scores = remapScores(ps.totalScores);
+                    }
+                }
+
                 startHand(liveRoom.gameState);
                 io.to(socket.currentRoom).emit('lobby_update', liveRoom);
                 io.to(socket.currentRoom).emit('game_state_update', liveRoom.gameState);

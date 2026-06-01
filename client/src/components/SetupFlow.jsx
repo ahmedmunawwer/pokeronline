@@ -14,6 +14,11 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
     const [sessVal, setSessVal] = useState("3");
     const [maxHandsVal, setMaxHandsVal] = useState("");
     const [indivStacks, setIndivStacks] = useState({});
+    const [startFromCheck, setStartFromCheck] = useState(false);
+    const [sfScreen, setSfScreen] = useState('config');
+    const [sfSession, setSfSession] = useState('');
+    const [sfMode, setSfMode] = useState(null);
+    const [sfScores, setSfScores] = useState({});
 
     // Countdown State
     const [timeLeft, setTimeLeft] = useState(5);
@@ -45,7 +50,8 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
         const mhps = maxHandsVal === "" ? null : parseInt(maxHandsVal, 10);
         if(!sb||!bb||!sess||bb<=sb) return alert("BB > SB, sessions > 0");
         if(maxHandsVal !== "" && (!(mhps > 0) || !Number.isInteger(mhps))) return alert("Max hands must be a positive integer, or leave blank for unlimited");
-        
+        if (startFromCheck) { setSfScreen('session_start'); return; }
+
         let stacks = {};
         if (equalStack) {
             const gs = Number(globalStack);
@@ -62,6 +68,69 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
         socket.emit("start_countdown", {
             cfg: { sb, bb, sessions: sess, maxHandsPerSession: mhps },
             stacks
+        });
+    };
+
+    const doStartFromSession = () => {
+        const sb=Number(sbVal), bb=Number(bbVal), sess=Number(sessVal);
+        const mhps = maxHandsVal === "" ? null : parseInt(maxHandsVal, 10);
+        const sfs = parseInt(sfSession, 10);
+        if (!Number.isInteger(sfs) || sfs < 2 || sfs > sess - 1)
+            return alert(`Session must be between 2 and ${sess - 1}`);
+        if (!sfMode) return alert("Select a score entry mode");
+        const scoreErrors = [];
+        const builtScores = {};
+        players.forEach(p => {
+            const raw = (sfScores[p.id] || '').trim();
+            if (sfMode === 'per_session') {
+                const parts = raw.split(',').map(s => s.trim());
+                if (parts.length !== sfs - 1) {
+                    scoreErrors.push(`${p.name}: enter exactly ${sfs - 1} number${sfs - 1 === 1 ? '' : 's'}`);
+                } else if (parts.some(s => !/^\d+$/.test(s))) {
+                    scoreErrors.push(`${p.name}: all values must be whole numbers ≥ 0`);
+                } else {
+                    builtScores[p.id] = parts.map(Number);
+                }
+            } else {
+                if (!/^\d+$/.test(raw)) {
+                    scoreErrors.push(`${p.name}: must be a whole number ≥ 0`);
+                } else {
+                    builtScores[p.id] = Number(raw);
+                }
+            }
+        });
+        if (scoreErrors.length) return alert(scoreErrors.join('\n'));
+        let stacks = {};
+        if (equalStack) {
+            const gs = Number(globalStack);
+            if (!gs || gs <= 0) return alert("Enter valid global stack");
+            players.forEach(p => stacks[p.id] = gs);
+        } else {
+            for (let p of players) {
+                const s = Number(indivStacks[p.id]);
+                if (!s || s <= 0) return alert(`Enter valid stack for ${p.name}`);
+                stacks[p.id] = s;
+            }
+        }
+        let presetScores;
+        if (sfMode === 'per_session') {
+            const sessionHistory = [];
+            for (let i = 0; i < sfs - 1; i++) {
+                const scores = {};
+                players.forEach(p => { scores[p.id] = builtScores[p.id][i]; });
+                sessionHistory.push({ sn: i + 1, scores });
+            }
+            presetScores = { mode: 'per_session', sessionHistory };
+        } else {
+            const totalScores = {};
+            players.forEach(p => { totalScores[p.id] = builtScores[p.id]; });
+            presetScores = { mode: 'total', totalScores };
+        }
+        socket.emit("start_countdown", {
+            cfg: { sb, bb, sessions: sess, maxHandsPerSession: mhps },
+            stacks,
+            startFromSession: sfs,
+            presetScores
         });
     };
 
@@ -155,12 +224,62 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
             );
         }
 
+        if (sfScreen === 'session_start') {
+            const sess = Number(sessVal);
+            const sfs = parseInt(sfSession, 10);
+            const validSfs = Number.isInteger(sfs) && sfs >= 2 && sfs <= sess - 1;
+            return (
+                <div style={{display:"flex",justifyContent:"center",alignItems:"center",minHeight:"80vh",padding:20}}>
+                    <div style={{maxWidth:460,width:"100%"}}>
+                        <Card>
+                            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+                                <button onClick={()=>{setSfScreen('config');setSfSession('');setSfMode(null);setSfScores({});}} style={{background:"none",border:"none",color:G,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>←</button>
+                                <h2 style={{color:G,margin:0,fontSize:18}}>Start from Session</h2>
+                            </div>
+                            <Fld lbl="Which session to start from?" val={sfSession} ch={e=>{setSfSession(e.target.value);setSfScores({});setSfMode(null);}} type="number" ph={`2 – ${sess - 1}`} mb={20}/>
+                            {validSfs && (
+                                <>
+                                    <div style={{color:DIM,fontSize:13,marginBottom:10}}>How do you want to enter past scores?</div>
+                                    <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
+                                        {[['per_session','Enter points of each session'],['total','Enter total points of all sessions']].map(([val,lbl])=>(
+                                            <label key={val} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",background:sfMode===val?"rgba(240,192,64,0.10)":"rgba(255,255,255,0.05)",padding:"10px 14px",borderRadius:10,border:`1px solid ${sfMode===val?"rgba(240,192,64,0.4)":"rgba(255,255,255,0.10)"}`}}>
+                                                <input type="radio" name="sfMode" value={val} checked={sfMode===val} onChange={()=>{setSfMode(val);setSfScores({});}} style={{accentColor:G}}/>
+                                                <span style={{color:"#fff",fontSize:14}}>{lbl}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                            {validSfs && sfMode && (
+                                <>
+                                    <div style={{color:DIM,fontSize:13,marginBottom:10}}>
+                                        {sfMode==='per_session' ? `Enter ${sfs-1} comma-separated score${sfs-1===1?'':'s'} per player (sessions 1–${sfs-1})` : "Enter each player's total score across all skipped sessions"}
+                                    </div>
+                                    <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
+                                        {players.map(p=>(
+                                            <div key={p.id} style={{display:"flex",alignItems:"center",gap:10}}>
+                                                <div style={{width:100,color:"#fff",fontSize:14,flexShrink:0}}>{p.name}</div>
+                                                <div style={{flex:1}}>
+                                                    <Fld val={sfScores[p.id]||""} ch={e=>setSfScores(prev=>({...prev,[p.id]:e.target.value}))} ph={sfMode==='per_session'?`e.g. ${Array.from({length:sfs-1},(_,i)=>i+1).join(', ')}`:"0"} mb={0}/>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <Btn full onClick={doStartFromSession}>🏁 Start Game</Btn>
+                                </>
+                            )}
+                        </Card>
+                    </div>
+                </div>
+            );
+        }
+
         return (
             <div style={{display:"flex",justifyContent:"center",alignItems:"center",minHeight:"80vh",padding:20}}>
                 <div style={{maxWidth: 460, width: "100%"}}>
                     <Card>
                         <h2 style={{color:G, marginTop:0, textAlign:"center"}}>Final Settings</h2>
-                        
+
                         {equalStack ? (
                             <Fld lbl="Universal Starting Stack" val={globalStack} ch={e=>setGlobalStack(e.target.value)} type="number" mb={20}/>
                         ) : (
@@ -178,9 +297,13 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
                         <Fld lbl="Small Blind" val={sbVal} ch={e=>{setSbVal(e.target.value);setBbVal(String(Number(e.target.value)*2));}} type="number"/>
                         <Fld lbl="Big Blind" val={bbVal} ch={e=>setBbVal(e.target.value)} type="number"/>
                         <Fld lbl="Number of Sessions" val={sessVal} ch={e=>setSessVal(e.target.value)} type="number"/>
+                        <div style={{display:"flex",alignItems:"center",gap:10,margin:"0 0 16px"}}>
+                            <input type="checkbox" id="sfCheck" checked={startFromCheck} onChange={e=>setStartFromCheck(e.target.checked)} style={{width:16,height:16,accentColor:G,cursor:"pointer"}}/>
+                            <label htmlFor="sfCheck" style={{color:"#fff",fontSize:14,cursor:"pointer"}}>Start from a session</label>
+                        </div>
                         <Fld lbl="Max Hands per Session" val={maxHandsVal} ch={e=>setMaxHandsVal(e.target.value)} type="number" ph="∞ (unlimited)" mb={20}/>
-                        
-                        <Btn full onClick={doStartCountdown}>🏁 Start Game</Btn>
+
+                        <Btn full onClick={doStartCountdown}>{startFromCheck ? '▶ Configure Sessions →' : '🏁 Start Game'}</Btn>
                     </Card>
                 </div>
             </div>
