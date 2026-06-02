@@ -417,7 +417,7 @@ module.exports = function(io) {
             if (callback) callback({ success: true });
         });
 
-        socket.on('host_end_game', (data, callback) => {
+        socket.on('host_end_game', async (data, callback) => {
             if (!socket.currentRoom) return callback && callback({ success: false });
             const room = roomManager.getRoom(socket.currentRoom);
             if (rejectIfStalled(socket, room, callback)) return;
@@ -428,7 +428,7 @@ module.exports = function(io) {
             // Optionally save before ending
             if (data && data.save) {
                 try {
-                    saveManager.saveGame(room.gameState, room.players);
+                    await saveManager.saveGame(room.gameState, room.players);
                 } catch (e) { /* silent fail */ }
             }
 
@@ -458,31 +458,31 @@ module.exports = function(io) {
         });
 
         // --- Save / Load ---
-        socket.on('save_game', (callback) => {
+        socket.on('save_game', async (callback) => {
             if (!socket.currentRoom) return callback({ success: false, message: 'Not in a room' });
             const room = roomManager.getRoom(socket.currentRoom);
             if (rejectIfStalled(socket, room, callback)) return;
             if (!room || room.hostId !== socket.id) return callback({ success: false, message: 'Only host can save' });
             try {
-                const saveId = saveManager.saveGame(room.gameState, room.players);
+                const saveId = await saveManager.saveGame(room.gameState, room.players);
                 callback({ success: true, saveId });
             } catch (e) {
                 callback({ success: false, message: e.message });
             }
         });
 
-        socket.on('list_saves', (callback) => {
+        socket.on('list_saves', async (callback) => {
             try {
-                const saves = saveManager.listSaves();
+                const saves = await saveManager.listSaves();
                 callback({ success: true, saves });
             } catch (e) {
                 callback({ success: false, saves: [], message: e.message });
             }
         });
 
-        socket.on('load_game', (data, callback) => {
+        socket.on('load_game', async (data, callback) => {
             try {
-                const save = saveManager.loadSave(data.saveId);
+                const save = await saveManager.loadSave(data.saveId);
                 if (!save) return callback({ success: false, message: 'Save not found' });
 
                 // Validate host name

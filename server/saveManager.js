@@ -1,16 +1,18 @@
-const fs = require('fs');
-const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
 
-const SAVE_DIR = path.join(__dirname, '..', 'saves');
+const MAX_NAMED_SAVES = 7;
 
-// Ensure saves directory exists
-if (!fs.existsSync(SAVE_DIR)) {
-    fs.mkdirSync(SAVE_DIR, { recursive: true });
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+    console.error('[saveManager] WARNING: SUPABASE_URL or SUPABASE_SERVICE_KEY not set — saves will fail');
 }
 
-function saveGame(gameState, roomPlayers) {
+const supabase = createClient(
+    process.env.SUPABASE_URL || '',
+    process.env.SUPABASE_SERVICE_KEY || ''
+);
+
+async function saveGame(gameState, roomPlayers) {
     const saveId = Date.now().toString(36);
-    // Clean state for serialization
     const stateCopy = JSON.parse(JSON.stringify(gameState));
     delete stateCopy.confirmations;
 
@@ -24,16 +26,39 @@ function saveGame(gameState, roomPlayers) {
         sessionNumber: gameState.sn
     };
 
-    const filePath = path.join(SAVE_DIR, `save_${saveId}.json`);
-    fs.writeFileSync(filePath, JSON.stringify(saveData, null, 2));
+    try {
+        const { data: existing, error: listErr } = await supabase
+            .from('saves')
+            .select('id, updated_at')
+            .neq('id', 'autosave')
+            .order('updated_at', { ascending: true });
+
+        if (listErr) throw listErr;
+
+        if (existing && existing.length >= MAX_NAMED_SAVES) {
+            const { error: delErr } = await supabase
+                .from('saves')
+                .delete()
+                .eq('id', existing[0].id);
+            if (delErr) throw delErr;
+        }
+
+        const { error: insErr } = await supabase
+            .from('saves')
+            .insert({ id: saveId, data: saveData });
+        if (insErr) throw insErr;
+    } catch (e) {
+        console.error('[saveManager] saveGame failed:', e.message);
+    }
+
     return saveId;
 }
 
-function saveAutosave(gameState, roomPlayers) {
+async function saveAutosave(gameState, roomPlayers) {
     const stateCopy = JSON.parse(JSON.stringify(gameState));
     delete stateCopy.confirmations;
 
-    const saveData = JSON.stringify({
+    const saveData = {
         saveId: 'autosave',
         savedAt: new Date().toISOString(),
         playerNames: roomPlayers.map(p => p.name),
@@ -41,38 +66,59 @@ function saveAutosave(gameState, roomPlayers) {
         gameState: stateCopy,
         handNumber: gameState.hn,
         sessionNumber: gameState.sn
-    }, null, 2);
+    };
 
-    const filePath = path.join(SAVE_DIR, 'save_autosave.json');
-    fs.writeFile(filePath, saveData, (err) => {
-        if (err) console.error('[autosave] write failed:', err.message);
-    });
+    try {
+        const { error } = await supabase
+            .from('saves')
+            .upsert({ id: 'autosave', data: saveData }, { onConflict: 'id' });
+        if (error) throw error;
+    } catch (e) {
+        console.error('[autosave] write failed:', e.message);
+    }
 }
 
-function listSaves() {
-    if (!fs.existsSync(SAVE_DIR)) return [];
-    const files = fs.readdirSync(SAVE_DIR).filter(f => f.startsWith('save_') && f.endsWith('.json'));
-    return files.map(f => {
-        try {
-            const data = JSON.parse(fs.readFileSync(path.join(SAVE_DIR, f), 'utf8'));
-            return {
-                saveId: data.saveId,
-                savedAt: data.savedAt,
-                playerNames: data.playerNames,
-                playerCount: data.playerCount,
-                handNumber: data.handNumber,
-                sessionNumber: data.sessionNumber
-            };
-        } catch (e) {
-            return null;
+async function listSaves() {
+    try {
+        const { data, error } = await supabase
+            .from('saves')
+            .select('id, data')
+            .order('updated_at', { ascending: false });
+
+        if (error) throw error;
+
+        return (data || []).map(row => ({
+            saveId: row.data.saveId,
+            savedAt: row.data.savedAt,
+            playerNames: row.data.playerNames,
+            playerCount: row.data.playerCount,
+            handNumber: row.data.handNumber,
+            sessionNumber: row.data.sessionNumber
+        }));
+    } catch (e) {
+        console.error('[saveManager] listSaves failed:', e.message);
+        return [];
+    }
+}
+
+async function loadSave(saveId) {
+    try {
+        const { data, error } = await supabase
+            .from('saves')
+            .select('data')
+            .eq('id', saveId)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') return null; // row not found
+            throw error;
         }
-    }).filter(Boolean).sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
-}
 
-function loadSave(saveId) {
-    const filePath = path.join(SAVE_DIR, `save_${saveId}.json`);
-    if (!fs.existsSync(filePath)) return null;
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        return data?.data ?? null;
+    } catch (e) {
+        console.error('[saveManager] loadSave failed:', e.message);
+        return null;
+    }
 }
 
 // Remap old socket IDs to new ones when resuming a loaded game
