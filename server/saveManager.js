@@ -11,13 +11,15 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_KEY || ''
 );
 
-async function saveGame(gameState, roomPlayers) {
+async function saveGame(gameState, roomPlayers, options = {}) {
+    const { name, overwriteSaveId } = options;
     const saveId = Date.now().toString(36);
     const stateCopy = JSON.parse(JSON.stringify(gameState));
     delete stateCopy.confirmations;
 
     const saveData = {
         saveId,
+        name: name || null,
         savedAt: new Date().toISOString(),
         playerNames: roomPlayers.map(p => p.name),
         playerCount: roomPlayers.length,
@@ -27,6 +29,40 @@ async function saveGame(gameState, roomPlayers) {
     };
 
     try {
+        if (overwriteSaveId) {
+            const { data: existing, error: fetchErr } = await supabase
+                .from('saves')
+                .select('data')
+                .eq('id', overwriteSaveId)
+                .single();
+            if (fetchErr) throw fetchErr;
+
+            const mergedData = {
+                ...existing.data,
+                savedAt: new Date().toISOString(),
+                playerNames: roomPlayers.map(p => p.name),
+                playerCount: roomPlayers.length,
+                gameState: stateCopy,
+                handNumber: gameState.hn,
+                sessionNumber: gameState.sn
+            };
+
+            const { error: updErr } = await supabase
+                .from('saves')
+                .update({ data: mergedData })
+                .eq('id', overwriteSaveId);
+            if (updErr) throw updErr;
+            return overwriteSaveId;
+        }
+
+        if (name) {
+            const { data: nameHit } = await supabase
+                .from('saves')
+                .select('id')
+                .filter('data->>name', 'eq', name);
+            if (nameHit?.length) throw new Error('DUPLICATE_NAME:' + name);
+        }
+
         const { data: existing, error: listErr } = await supabase
             .from('saves')
             .select('id, updated_at')
@@ -48,10 +84,11 @@ async function saveGame(gameState, roomPlayers) {
             .insert({ id: saveId, data: saveData });
         if (insErr) throw insErr;
     } catch (e) {
+        if (e.message?.startsWith('DUPLICATE_NAME:')) throw e;
         console.error('[saveManager] saveGame failed:', e.message);
     }
 
-    return saveId;
+    return overwriteSaveId || saveId;
 }
 
 async function saveAutosave(gameState, roomPlayers) {
@@ -65,7 +102,8 @@ async function saveAutosave(gameState, roomPlayers) {
         playerCount: roomPlayers.length,
         gameState: stateCopy,
         handNumber: gameState.hn,
-        sessionNumber: gameState.sn
+        sessionNumber: gameState.sn,
+        linkedSaveId: gameState.loadedFromSaveId || null
     };
 
     try {
@@ -87,18 +125,146 @@ async function listSaves() {
 
         if (error) throw error;
 
-        return (data || []).map(row => ({
-            saveId: row.data.saveId,
+        const items = (data || []).map(row => ({
+            saveId: row.id,
+            name: row.data.name || ('Save ' + (row.id || '').toUpperCase()),
             savedAt: row.data.savedAt,
             playerNames: row.data.playerNames,
             playerCount: row.data.playerCount,
             handNumber: row.data.handNumber,
-            sessionNumber: row.data.sessionNumber
+            sessionNumber: row.data.sessionNumber,
+            scores: row.data.gameState?.scores || {},
+            stacks: (row.data.gameState?.players || []).map(p => ({ id: p.id, name: p.name, stack: p.stack })),
+            cfg: row.data.gameState?.cfg || null,
+            linkedSaveId: row.data.linkedSaveId || null,
         }));
+
+        const autosave = items.find(s => s.saveId === 'autosave');
+        if (autosave?.linkedSaveId) {
+            const linked = items.find(s => s.saveId === autosave.linkedSaveId);
+            autosave.linkedName = linked?.name || null;
+            autosave.synced = linked
+                ? autosave.handNumber === linked.handNumber && autosave.sessionNumber === linked.sessionNumber
+                : false;
+        }
+
+        const named = items.filter(s => s.saveId !== 'autosave');
+        return autosave ? [autosave, ...named] : named;
     } catch (e) {
         console.error('[saveManager] listSaves failed:', e.message);
         return [];
     }
+}
+
+async function renameSave(saveId, newName) {
+    const { data: rows, error: fetchErr } = await supabase
+        .from('saves')
+        .select('data')
+        .eq('id', saveId)
+        .single();
+    if (fetchErr || !rows) throw new Error('Save not found');
+
+    const { data: nameHit } = await supabase
+        .from('saves')
+        .select('id')
+        .filter('data->>name', 'eq', newName)
+        .neq('id', saveId);
+    if (nameHit?.length) throw new Error('DUPLICATE_NAME:' + newName);
+
+    const updated = { ...rows.data, name: newName };
+    const { error: updErr } = await supabase
+        .from('saves')
+        .update({ data: updated })
+        .eq('id', saveId);
+    if (updErr) throw updErr;
+}
+
+async function deleteSave(saveId) {
+    if (saveId === 'autosave') throw new Error('Cannot delete autosave');
+    const { error } = await supabase
+        .from('saves')
+        .delete()
+        .eq('id', saveId);
+    if (error) throw error;
+}
+
+async function promoteAutosave(name) {
+    const { data: nameHit } = await supabase
+        .from('saves')
+        .select('id')
+        .filter('data->>name', 'eq', name);
+    if (nameHit?.length) throw new Error('DUPLICATE_NAME:' + name);
+
+    const autosaveData = await loadSave('autosave');
+    if (!autosaveData) throw new Error('No autosave found');
+
+    const { data: existing, error: listErr } = await supabase
+        .from('saves')
+        .select('id, updated_at')
+        .neq('id', 'autosave')
+        .order('updated_at', { ascending: true });
+    if (listErr) throw listErr;
+
+    if (existing && existing.length >= MAX_NAMED_SAVES) {
+        const { error: delErr } = await supabase
+            .from('saves')
+            .delete()
+            .eq('id', existing[0].id);
+        if (delErr) throw delErr;
+    }
+
+    const saveId = Date.now().toString(36);
+    const saveData = { ...autosaveData, saveId, name, savedAt: new Date().toISOString() };
+    delete saveData.linkedSaveId;
+    const { error: insErr } = await supabase
+        .from('saves')
+        .insert({ id: saveId, data: saveData });
+    if (insErr) throw insErr;
+
+    const { data: autosaveRow, error: fetchErr } = await supabase
+        .from('saves')
+        .select('data')
+        .eq('id', 'autosave')
+        .single();
+    if (fetchErr) throw fetchErr;
+    const { error: linkErr } = await supabase
+        .from('saves')
+        .update({ data: { ...autosaveRow.data, linkedSaveId: saveId } })
+        .eq('id', 'autosave');
+    if (linkErr) throw linkErr;
+
+    return saveId;
+}
+
+async function syncAutosaveWithLinked() {
+    const { data: autosaveRow, error: fetchErr } = await supabase
+        .from('saves')
+        .select('data')
+        .eq('id', 'autosave')
+        .single();
+    if (fetchErr || !autosaveRow) throw new Error('No autosave found');
+
+    const linkedId = autosaveRow.data.linkedSaveId;
+    if (!linkedId) throw new Error('Autosave has no linked save');
+
+    const { data: linkedRow, error: linkedErr } = await supabase
+        .from('saves')
+        .select('data')
+        .eq('id', linkedId)
+        .single();
+    if (linkedErr || !linkedRow) throw new Error('Linked save not found');
+
+    const mergedData = {
+        ...autosaveRow.data,
+        saveId: linkedId,
+        name: linkedRow.data.name
+    };
+    delete mergedData.linkedSaveId;
+    const { error: updErr } = await supabase
+        .from('saves')
+        .update({ data: mergedData })
+        .eq('id', linkedId);
+    if (updErr) throw updErr;
 }
 
 async function loadSave(saveId) {
@@ -195,4 +361,4 @@ function remapPlayerIds(gameState, nameToNewId) {
     }
 }
 
-module.exports = { saveGame, saveAutosave, listSaves, loadSave, remapPlayerIds };
+module.exports = { saveGame, saveAutosave, listSaves, loadSave, renameSave, deleteSave, promoteAutosave, syncAutosaveWithLinked, remapPlayerIds };

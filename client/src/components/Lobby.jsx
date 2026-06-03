@@ -37,6 +37,21 @@ export default function Lobby({ onJoined }) {
     const [loadHostName, setLoadHostName] = useState("");
     const [showLoadDropdown, setShowLoadDropdown] = useState(false);
 
+    const [detailSave, setDetailSave] = useState(null);
+    const [showRename, setShowRename] = useState(false);
+    const [renameInput, setRenameInput] = useState('');
+    const [renameError, setRenameError] = useState('');
+
+    const [loadedFromSaveIdOverride, setLoadedFromSaveIdOverride] = useState(undefined);
+    const [showSyncLoadModal, setShowSyncLoadModal] = useState(false);
+    const [showPromoteModal, setShowPromoteModal] = useState(false);
+    const [promoteInput, setPromoteInput] = useState('');
+    const [promoteError, setPromoteError] = useState('');
+
+    const [loadProtect, setLoadProtect] = useState(null);
+    const [loadProtectPromoteName, setLoadProtectPromoteName] = useState('');
+    const [loadProtectPromoteError, setLoadProtectPromoteError] = useState('');
+
     const [error, setError] = useState("");
 
     // Fetch latest room codes when entering host/join screens
@@ -209,6 +224,8 @@ export default function Lobby({ onJoined }) {
 
     const openLoadView = () => {
         setError("");
+        setSelectedSave(null);
+        setDetailSave(null);
         socket.emit('list_saves', (res) => {
             if (res.success) {
                 setSaves(res.saves);
@@ -228,12 +245,116 @@ export default function Lobby({ onJoined }) {
         socket.emit('load_game', {
             saveId: selectedSave.saveId,
             hostName: loadHostName.trim(),
-            secondName: dualSeat ? loadHostName2.trim() : undefined
+            secondName: dualSeat ? loadHostName2.trim() : undefined,
+            ...(loadedFromSaveIdOverride !== undefined ? { overrideLoadedFromSaveId: loadedFromSaveIdOverride } : {})
         }, (res) => {
             if (res.success) {
                 onJoined(res.roomCode, loadHostName.trim(), res.playerId, dualSeat ? loadHostName2.trim() : undefined, res.secondPlayerId);
             } else {
                 setError(res.message);
+            }
+        });
+    };
+
+    const doLoadFromDetail = () => {
+        if (detailSave.saveId === 'autosave') {
+            if (detailSave.linkedSaveId && !detailSave.synced) {
+                setShowSyncLoadModal(true);
+                return;
+            }
+            setLoadedFromSaveIdOverride(detailSave.linkedSaveId || null);
+            setSelectedSave(detailSave);
+            setDetailSave(null);
+            setLoadHostName('');
+            setLoadHostName2('');
+            setError('');
+            return;
+        }
+
+        const autosave = saves.find(s => s.saveId === 'autosave');
+        if (autosave) {
+            const linkedToThis = autosave.linkedSaveId === detailSave.saveId;
+            const validLink = autosave.linkedSaveId && autosave.linkedName;
+
+            if (linkedToThis) {
+                if (!autosave.synced) {
+                    setLoadProtect({ type: 'linked_this_unsynced', autosave, targetSave: detailSave });
+                    return;
+                }
+            } else if (!validLink) {
+                setLoadProtectPromoteName('');
+                setLoadProtectPromoteError('');
+                setLoadProtect({ type: 'unlinked', autosave, targetSave: detailSave });
+                return;
+            } else if (!autosave.synced) {
+                setLoadProtect({ type: 'linked_diff_unsynced', autosave, targetSave: detailSave });
+                return;
+            }
+        }
+
+        setLoadedFromSaveIdOverride(undefined);
+        setSelectedSave(detailSave);
+        setDetailSave(null);
+        setLoadHostName('');
+        setLoadHostName2('');
+        setError('');
+    };
+
+    const doRename = () => {
+        const trimmed = renameInput.trim();
+        if (!trimmed) return setRenameError('Please enter a name');
+        socket.emit('rename_save', { saveId: detailSave.saveId, newName: trimmed }, (res) => {
+            if (res.success) {
+                setSaves(saves.map(s => s.saveId === detailSave.saveId ? {...s, name: trimmed} : s));
+                setDetailSave({...detailSave, name: trimmed});
+                setShowRename(false);
+            } else {
+                const msg = res.message?.startsWith('DUPLICATE_NAME:')
+                    ? `A save named '${trimmed}' already exists. Choose a different name.`
+                    : (res.message || 'Rename failed');
+                setRenameError(msg);
+            }
+        });
+    };
+
+    const doDelete = () => {
+        if (!window.confirm(`Delete '${detailSave.name}'? This cannot be undone.`)) return;
+        socket.emit('delete_save', { saveId: detailSave.saveId }, (res) => {
+            if (res.success) {
+                setSaves(saves.filter(s => s.saveId !== detailSave.saveId));
+                if (selectedSave?.saveId === detailSave.saveId) setSelectedSave(null);
+                setDetailSave(null);
+            } else {
+                setError(res.message || 'Delete failed');
+                setDetailSave(null);
+            }
+        });
+    };
+
+    const doSyncAutosave = () => {
+        socket.emit('sync_autosave_with_linked', (res) => {
+            if (res.success) {
+                socket.emit('list_saves', (lr) => { if (lr.success) setSaves(lr.saves); });
+                setDetailSave(d => d ? {...d, synced: true} : d);
+            } else {
+                setError(res.message || 'Sync failed');
+            }
+        });
+    };
+
+    const doPromoteAutosave = () => {
+        const trimmed = promoteInput.trim();
+        if (!trimmed) return setPromoteError('Please enter a name');
+        socket.emit('promote_autosave', { name: trimmed }, (res) => {
+            if (res.success) {
+                socket.emit('list_saves', (lr) => { if (lr.success) setSaves(lr.saves); });
+                setDetailSave(d => d ? {...d, linkedSaveId: res.saveId, linkedName: trimmed, synced: true} : d);
+                setShowPromoteModal(false);
+            } else {
+                const msg = res.message?.startsWith('DUPLICATE_NAME:')
+                    ? `A save named '${trimmed}' already exists. Choose a different name.`
+                    : (res.message || 'Promote failed');
+                setPromoteError(msg);
             }
         });
     };
@@ -453,7 +574,7 @@ export default function Lobby({ onJoined }) {
                     {view === "load" && (
                         <div style={{textAlign:"left"}}>
                             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-                                <button onClick={()=>{setView("main"); setSelectedSave(null);}} style={{background:"none",border:"none",color:G,fontSize:22,cursor:"pointer",padding:0}}>←</button>
+                                <button onClick={()=>{setView("main"); setSelectedSave(null); setDetailSave(null);}} style={{background:"none",border:"none",color:G,fontSize:22,cursor:"pointer",padding:0}}>←</button>
                                 <span style={{color:G,fontWeight:700,fontSize:15}}>Load Saved Game</span>
                             </div>
                             
@@ -465,17 +586,28 @@ export default function Lobby({ onJoined }) {
                             ) : (
                                 <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16,maxHeight:300,overflowY:"auto"}}>
                                     {saves.map(s => (
-                                        <button key={s.saveId} onClick={()=>{setSelectedSave(s); setError("");}} style={{
-                                            background: selectedSave?.saveId === s.saveId ? "rgba(240,192,64,0.15)" : "rgba(255,255,255,0.05)",
-                                            border: selectedSave?.saveId === s.saveId ? "1px solid rgba(240,192,64,0.5)" : "1px solid rgba(255,255,255,0.1)",
-                                            borderRadius:12, padding:"12px 14px", cursor:"pointer", textAlign:"left", color:"#fff"
+                                        <button key={s.saveId} onClick={()=>{setDetailSave(s); setError("");}} style={{
+                                            background: s.saveId === 'autosave' ? "rgba(240,192,64,0.10)" : "rgba(255,255,255,0.05)",
+                                            border: s.saveId === 'autosave' ? "1px solid rgba(240,192,64,0.35)" : "1px solid rgba(255,255,255,0.1)",
+                                            borderRadius:12, padding:"12px 14px", cursor:"pointer", textAlign:"left", color:"#fff", width:"100%"
                                         }}>
                                             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                                                <span style={{fontWeight:700,fontSize:14}}>{s.saveId === 'autosave' ? '⚡ Autosave · ' : ''}Hand #{s.handNumber} · Session {s.sessionNumber}</span>
+                                                <span style={{fontWeight:700,fontSize:14}}>
+                                                    {s.saveId === 'autosave' ? (
+                                                        <>
+                                                            ⚡ Autosave
+                                                            {s.linkedSaveId && s.linkedName && (
+                                                                <span style={{color: s.synced ? '#4caf50' : '#ef4444', fontWeight:600, marginLeft:6}}>
+                                                                    ({s.linkedName})
+                                                                </span>
+                                                            )}
+                                                        </>
+                                                    ) : s.name}
+                                                </span>
                                                 <span style={{color:DIM,fontSize:11}}>{formatDate(s.savedAt)}</span>
                                             </div>
                                             <div style={{color:DIM,fontSize:12}}>
-                                                {s.playerCount} players: {s.playerNames.join(", ")}
+                                                Session {s.sessionNumber} · Hand #{s.handNumber} · {s.playerCount} players
                                             </div>
                                         </button>
                                     ))}
@@ -543,6 +675,226 @@ export default function Lobby({ onJoined }) {
                     )}
                 </Card>
             </div>
+            {detailSave && !showRename && (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:200,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+                    <div style={{background:'#1a0f0a',borderRadius:'20px 20px 0 0',padding:'24px 20px 32px',width:'100%',maxWidth:460,maxHeight:'85vh',overflowY:'auto',position:'relative'}}>
+                        <button onClick={()=>{setDetailSave(null);setError('');}} style={{position:'absolute',top:16,right:16,background:'none',border:'none',color:DIM,fontSize:22,cursor:'pointer',padding:0,lineHeight:1}}>✕</button>
+                        <div style={{color:G,fontWeight:800,fontSize:20,marginBottom:4,paddingRight:36}}>
+                            {detailSave.saveId === 'autosave' ? '⚡ Autosave' : detailSave.name}
+                        </div>
+                        <div style={{color:DIM,fontSize:12,marginBottom:16}}>Saved on {formatDate(detailSave.savedAt)}</div>
+                        {detailSave.saveId === 'autosave' && detailSave.linkedSaveId && (
+                            <div style={{fontSize:12,marginBottom:12,color:detailSave.synced?'#4caf50':'#ef4444'}}>
+                                🔗 Linked: {detailSave.linkedName || detailSave.linkedSaveId}
+                                {detailSave.synced ? ' · Synced' : ' · ⚠ Unsynced'}
+                            </div>
+                        )}
+                        <div style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:detailSave.cfg?.maxHandsPerSession ? 4 : 16}}>
+                            Session {detailSave.sessionNumber}{detailSave.cfg?.sessions ? ' of ' + detailSave.cfg.sessions : ''} · Hand #{detailSave.handNumber}
+                        </div>
+                        {detailSave.cfg?.maxHandsPerSession && (
+                            <div style={{color:DIM,fontSize:12,marginBottom:16}}>Max Hands per Session: {detailSave.cfg.maxHandsPerSession}</div>
+                        )}
+                        <div style={{marginBottom:16}}>
+                            <div style={{color:'rgba(255,255,255,0.45)',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>Players</div>
+                            {(detailSave.stacks||[]).map(p => (
+                                <div key={p.name} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+                                    <span style={{color:'#fff',fontSize:14}}>{p.name}</span>
+                                    <span style={{color:DIM,fontSize:13}}>{p.stack.toLocaleString()} chips</span>
+                                </div>
+                            ))}
+                        </div>
+                        {(() => {
+                            const medals = ['🥇','🥈','🥉'];
+                            const scored = (detailSave.stacks||[])
+                                .map(p => ({name:p.name, score:(detailSave.scores||{})[p.id]||0}))
+                                .sort((a,b) => b.score - a.score);
+                            if (!scored.some(p => p.score !== 0)) return null;
+                            return (
+                                <div style={{marginBottom:20}}>
+                                    <div style={{color:'rgba(255,255,255,0.45)',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>Cumulative Scores</div>
+                                    {scored.map((p,i) => (
+                                        <div key={p.name} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+                                            <span style={{color:'#fff',fontSize:14}}>{medals[i]||''} {p.name}</span>
+                                            <span style={{color:G,fontSize:13,fontWeight:700}}>{p.score>0?'+':''}{p.score.toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
+                        {detailSave.saveId === 'autosave' ? (
+                            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                                <Btn full bg="#2e7d32" onClick={doLoadFromDetail}>🔄 Load Game</Btn>
+                                {!detailSave.linkedSaveId && (
+                                    <Btn full bg="rgba(100,180,100,0.15)" onClick={()=>{setPromoteInput('');setPromoteError('');setShowPromoteModal(true);}}>💾 Promote to named save</Btn>
+                                )}
+                                {detailSave.linkedSaveId && !detailSave.synced && (
+                                    <Btn full bg="rgba(255,193,7,0.15)" onClick={doSyncAutosave}>🔗 Sync with {detailSave.linkedName || 'linked save'}</Btn>
+                                )}
+                            </div>
+                        ) : (
+                            <div style={{display:'flex',gap:8,alignItems:'stretch'}}>
+                                <div style={{flex:1}}>
+                                    <Btn full bg="#2e7d32" onClick={doLoadFromDetail}>🔄 Load Game</Btn>
+                                </div>
+                                <button onClick={()=>{setRenameInput(detailSave.name);setRenameError('');setShowRename(true);}} style={{width:44,background:'rgba(255,255,255,0.09)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:10,color:'#fff',fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexShrink:0}}>✏️</button>
+                                <button onClick={doDelete} style={{width:44,background:'rgba(160,0,0,0.35)',border:'1px solid rgba(180,0,0,0.4)',borderRadius:10,color:'#fff',fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexShrink:0}}>🗑</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+            {detailSave && showRename && (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:201,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+                    <div style={{background:'#1a0f0a',borderRadius:16,padding:24,width:'100%',maxWidth:400}}>
+                        <div style={{color:G,fontWeight:700,fontSize:16,marginBottom:16}}>Rename Save</div>
+                        <input value={renameInput} onChange={e=>{setRenameInput(e.target.value);setRenameError('');}}
+                            placeholder="Save name"
+                            style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:'#fff',fontSize:14,boxSizing:'border-box',outline:'none',marginBottom:8}}
+                        />
+                        {renameError && <div style={{color:'#ff6b6b',fontSize:12,marginBottom:8}}>{renameError}</div>}
+                        <div style={{display:'flex',gap:10,marginTop:4}}>
+                            <Btn full bg="rgba(255,255,255,0.08)" onClick={()=>setShowRename(false)}>Cancel</Btn>
+                            <Btn full onClick={doRename}>Save</Btn>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {showPromoteModal && (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:202,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+                    <div style={{background:'#1a0f0a',borderRadius:16,padding:24,width:'100%',maxWidth:400}}>
+                        <div style={{color:G,fontWeight:700,fontSize:16,marginBottom:16}}>Promote to named save</div>
+                        <input value={promoteInput} onChange={e=>{setPromoteInput(e.target.value);setPromoteError('');}}
+                            placeholder="Save name"
+                            style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:'#fff',fontSize:14,boxSizing:'border-box',outline:'none',marginBottom:8}}
+                        />
+                        {promoteError && <div style={{color:'#ff6b6b',fontSize:12,marginBottom:8}}>{promoteError}</div>}
+                        <div style={{display:'flex',gap:10,marginTop:4}}>
+                            <Btn full bg="rgba(255,255,255,0.08)" onClick={()=>setShowPromoteModal(false)}>Cancel</Btn>
+                            <Btn full onClick={doPromoteAutosave}>💾 Promote</Btn>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {loadProtect && (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.80)',zIndex:202,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+                    <div style={{background:'#1a0f0a',borderRadius:16,padding:24,width:'100%',maxWidth:420}}>
+                        <div style={{color:G,fontWeight:700,fontSize:16,marginBottom:12}}>Autosave will be overwritten</div>
+                        {loadProtect.type === 'unlinked' && (
+                            <div style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:12,lineHeight:1.5}}>
+                                The current autosave has unsaved progress (Session {loadProtect.autosave.sessionNumber} · Hand #{loadProtect.autosave.handNumber}). Loading <strong style={{color:'#fff'}}>{loadProtect.targetSave.name}</strong> will overwrite it. Promote to a named save first?
+                            </div>
+                        )}
+                        {loadProtect.type === 'linked_this_unsynced' && (
+                            <div style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:16,lineHeight:1.5}}>
+                                The autosave is ahead of <strong style={{color:'#fff'}}>{loadProtect.targetSave.name}</strong> (Session {loadProtect.autosave.sessionNumber} · Hand #{loadProtect.autosave.handNumber}). Loading will overwrite the autosave. Sync first?
+                            </div>
+                        )}
+                        {loadProtect.type === 'linked_diff_unsynced' && (
+                            <div style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:16,lineHeight:1.5}}>
+                                Autosave has unsaved progress for <strong style={{color:'#fff'}}>{loadProtect.autosave.linkedName}</strong> (Session {loadProtect.autosave.sessionNumber} · Hand #{loadProtect.autosave.handNumber}). Loading <strong style={{color:'#fff'}}>{loadProtect.targetSave.name}</strong> will overwrite it. Sync first?
+                            </div>
+                        )}
+                        {loadProtect.type === 'unlinked' && (<>
+                            <input value={loadProtectPromoteName} onChange={e=>{setLoadProtectPromoteName(e.target.value);setLoadProtectPromoteError('');}}
+                                placeholder="Save name"
+                                style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:'#fff',fontSize:14,boxSizing:'border-box',outline:'none',marginBottom:8}}
+                            />
+                            {loadProtectPromoteError && <div style={{color:'#ff6b6b',fontSize:12,marginBottom:8}}>{loadProtectPromoteError}</div>}
+                        </>)}
+                        <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:4}}>
+                            {loadProtect.type === 'unlinked' && (
+                                <Btn full bg="#2e7d32" onClick={()=>{
+                                    const n = loadProtectPromoteName.trim();
+                                    if (!n) return setLoadProtectPromoteError('Please enter a name');
+                                    socket.emit('promote_autosave', { name: n }, (res) => {
+                                        if (res.success) {
+                                            socket.emit('list_saves', lr => { if (lr.success) setSaves(lr.saves); });
+                                            const ts = loadProtect.targetSave;
+                                            setLoadProtect(null);
+                                            setLoadedFromSaveIdOverride(undefined);
+                                            setSelectedSave(ts);
+                                            setDetailSave(null);
+                                            setLoadHostName('');
+                                            setLoadHostName2('');
+                                        } else {
+                                            const msg = res.message?.startsWith('DUPLICATE_NAME:')
+                                                ? `A save named '${n}' already exists. Choose a different name.`
+                                                : (res.message || 'Promote failed');
+                                            setLoadProtectPromoteError(msg);
+                                        }
+                                    });
+                                }}>💾 Promote and load</Btn>
+                            )}
+                            {(loadProtect.type === 'linked_this_unsynced' || loadProtect.type === 'linked_diff_unsynced') && (
+                                <Btn full bg="#2e7d32" onClick={()=>{
+                                    socket.emit('sync_autosave_with_linked', (res) => {
+                                        const ts = loadProtect.targetSave;
+                                        if (res.success) {
+                                            socket.emit('list_saves', lr => { if (lr.success) setSaves(lr.saves); });
+                                        } else {
+                                            setError(res.message || 'Sync failed');
+                                        }
+                                        setLoadProtect(null);
+                                        setLoadedFromSaveIdOverride(undefined);
+                                        setSelectedSave(ts);
+                                        setDetailSave(null);
+                                        setLoadHostName('');
+                                        setLoadHostName2('');
+                                    });
+                                }}>🔗 Sync and load</Btn>
+                            )}
+                            <Btn full bg="rgba(255,255,255,0.09)" onClick={()=>{
+                                const ts = loadProtect.targetSave;
+                                setLoadProtect(null);
+                                setLoadedFromSaveIdOverride(undefined);
+                                setSelectedSave(ts);
+                                setDetailSave(null);
+                                setLoadHostName('');
+                                setLoadHostName2('');
+                            }}>Discard and load</Btn>
+                            <Btn full bg="rgba(255,255,255,0.05)" onClick={()=>setLoadProtect(null)}>Cancel</Btn>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {showSyncLoadModal && detailSave && (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:202,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+                    <div style={{background:'#1a0f0a',borderRadius:16,padding:24,width:'100%',maxWidth:420}}>
+                        <div style={{color:G,fontWeight:700,fontSize:16,marginBottom:12}}>Sync linked save?</div>
+                        <div style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:20,lineHeight:1.5}}>
+                            Autosave is at Session {detailSave.sessionNumber} · Hand #{detailSave.handNumber} but <strong style={{color:'#fff'}}>{detailSave.linkedName || 'linked save'}</strong> is behind. Sync it to match before loading?
+                        </div>
+                        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                            <Btn full bg="#2e7d32" onClick={()=>{
+                                socket.emit('sync_autosave_with_linked', (res) => {
+                                    if (res.success) {
+                                        socket.emit('list_saves', (lr) => { if (lr.success) setSaves(lr.saves); });
+                                        setShowSyncLoadModal(false);
+                                        setLoadedFromSaveIdOverride(detailSave.linkedSaveId);
+                                        setSelectedSave(detailSave);
+                                        setDetailSave(null);
+                                        setLoadHostName('');
+                                        setLoadHostName2('');
+                                    } else {
+                                        setError(res.message || 'Sync failed');
+                                        setShowSyncLoadModal(false);
+                                    }
+                                });
+                            }}>🔗 Sync and Load</Btn>
+                            <Btn full bg="rgba(255,255,255,0.09)" onClick={()=>{
+                                setShowSyncLoadModal(false);
+                                setLoadedFromSaveIdOverride(detailSave.linkedSaveId);
+                                setSelectedSave(detailSave);
+                                setDetailSave(null);
+                                setLoadHostName('');
+                                setLoadHostName2('');
+                            }}>Load without syncing</Btn>
+                            <Btn full bg="rgba(255,255,255,0.05)" onClick={()=>setShowSyncLoadModal(false)}>Cancel</Btn>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
