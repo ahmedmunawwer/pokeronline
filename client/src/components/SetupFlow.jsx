@@ -51,7 +51,8 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
             const autosave = res.saves?.find(s => s.saveId === 'autosave');
             const meaningful = !!autosave;
             if (!meaningful) { socket.emit('lock_room'); return; }
-            if (!autosave.linkedSaveId) {
+            const effectivelyLinked = autosave.linkedSaveId && autosave.linkedName;
+            if (!effectivelyLinked) {
                 setLockPromoteName('');
                 setLockPromoteError('');
                 setLockProtect({ type: 'unlinked', autosave });
