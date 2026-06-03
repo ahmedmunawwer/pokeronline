@@ -699,6 +699,7 @@ function startHand(state) {
 function restartGame(state) {
     state.sn = 1;
     state.hn = 0;
+    state.loadedFromSaveId = null;
     state.handsThisSession = 0;
     state.scores = {};
     state.history = [];

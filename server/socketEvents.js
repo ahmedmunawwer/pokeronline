@@ -425,13 +425,6 @@ module.exports = function(io) {
 
             const roomCode = socket.currentRoom;
 
-            // Optionally save before ending
-            if (data && data.save) {
-                try {
-                    await saveManager.saveGame(room.gameState, room.players);
-                } catch (e) { /* silent fail */ }
-            }
-
             // Notify all other players
             socket.to(roomCode).emit('game_ended_by_host');
 
@@ -458,14 +451,72 @@ module.exports = function(io) {
         });
 
         // --- Save / Load ---
-        socket.on('save_game', async (callback) => {
+        socket.on('save_game', async (data, callback) => {
+            if (typeof data === 'function') { callback = data; data = {}; }
             if (!socket.currentRoom) return callback({ success: false, message: 'Not in a room' });
             const room = roomManager.getRoom(socket.currentRoom);
             if (rejectIfStalled(socket, room, callback)) return;
             if (!room || room.hostId !== socket.id) return callback({ success: false, message: 'Only host can save' });
             try {
-                const saveId = await saveManager.saveGame(room.gameState, room.players);
+                const { name, overwriteSaveId } = data || {};
+                if (!overwriteSaveId && !name) return callback({ success: false, message: 'Please enter a name' });
+                const saveId = await saveManager.saveGame(room.gameState, room.players, { name, overwriteSaveId });
+                if (!overwriteSaveId) {
+                    room.gameState.loadedFromSaveId = saveId;
+                    io.to(socket.currentRoom).emit('game_state_update', room.gameState);
+                }
                 callback({ success: true, saveId });
+            } catch (e) {
+                if (e.message?.startsWith('DUPLICATE_NAME:')) {
+                    return callback({ success: false, message: e.message });
+                }
+                callback({ success: false, message: e.message });
+            }
+        });
+
+        socket.on('rename_save', async (data, callback) => {
+            try {
+                const { saveId, newName } = data || {};
+                if (!saveId || !newName?.trim()) return callback({ success: false, message: 'Name required' });
+                await saveManager.renameSave(saveId, newName.trim());
+                callback({ success: true });
+            } catch (e) {
+                if (e.message?.startsWith('DUPLICATE_NAME:')) {
+                    return callback({ success: false, message: e.message });
+                }
+                callback({ success: false, message: e.message });
+            }
+        });
+
+        socket.on('delete_save', async (data, callback) => {
+            try {
+                const { saveId } = data || {};
+                if (!saveId) return callback({ success: false, message: 'saveId required' });
+                await saveManager.deleteSave(saveId);
+                callback({ success: true });
+            } catch (e) {
+                callback({ success: false, message: e.message });
+            }
+        });
+
+        socket.on('promote_autosave', async (data, callback) => {
+            try {
+                const name = (data?.name || '').trim();
+                if (!name) return callback({ success: false, message: 'Please enter a name' });
+                const saveId = await saveManager.promoteAutosave(name);
+                callback({ success: true, saveId });
+            } catch (e) {
+                if (e.message?.startsWith('DUPLICATE_NAME:')) {
+                    return callback({ success: false, message: e.message });
+                }
+                callback({ success: false, message: e.message });
+            }
+        });
+
+        socket.on('sync_autosave_with_linked', async (callback) => {
+            try {
+                await saveManager.syncAutosaveWithLinked();
+                callback({ success: true });
             } catch (e) {
                 callback({ success: false, message: e.message });
             }
@@ -493,6 +544,10 @@ module.exports = function(io) {
                 }
 
                 const roomCode = roomManager.createLoadedRoom(save);
+                const lfsId = data.overrideLoadedFromSaveId !== undefined
+                    ? data.overrideLoadedFromSaveId
+                    : data.saveId;
+                roomManager.getRoom(roomCode).gameState.loadedFromSaveId = lfsId;
                 roomManager.joinLoadedRoom(roomCode, socket.id, hostName);
                 if (data.secondName) {
                     try {

@@ -20,6 +20,11 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
     const [sfMode, setSfMode] = useState(null);
     const [sfScores, setSfScores] = useState({});
 
+    // Lock Players overwrite protection
+    const [lockProtect, setLockProtect] = useState(null);
+    const [lockPromoteName, setLockPromoteName] = useState('');
+    const [lockPromoteError, setLockPromoteError] = useState('');
+
     // Countdown State
     const [timeLeft, setTimeLeft] = useState(5);
 
@@ -42,7 +47,21 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
     const doLock = () => {
         const nonHostPlayers = players.filter(p => !p.isHost);
         if (!nonHostPlayers.length || !nonHostPlayers.every(p => p.ready)) return;
-        socket.emit("lock_room");
+        socket.emit('list_saves', (res) => {
+            const autosave = res.saves?.find(s => s.saveId === 'autosave');
+            const meaningful = !!autosave;
+            if (!meaningful) { socket.emit('lock_room'); return; }
+            if (!autosave.linkedSaveId) {
+                setLockPromoteName('');
+                setLockPromoteError('');
+                setLockProtect({ type: 'unlinked', autosave });
+            } else if (!autosave.synced) {
+                setLockPromoteError('');
+                setLockProtect({ type: 'linked_unsynced', autosave });
+            } else {
+                socket.emit('lock_room');
+            }
+        });
     };
 
     const doStartCountdown = () => {
@@ -207,6 +226,55 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
 
                     </Card>
                 </div>
+            {lockProtect && (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.80)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+                    <div style={{background:'#1a0f0a',borderRadius:16,padding:24,width:'100%',maxWidth:420}}>
+                        {lockProtect.type === 'unlinked' ? (<>
+                            <div style={{color:G,fontWeight:700,fontSize:16,marginBottom:12}}>Autosave has unsaved progress</div>
+                            <div style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:16,lineHeight:1.5}}>
+                                Starting a new game will overwrite the current autosave (Session {lockProtect.autosave.sessionNumber} · Hand #{lockProtect.autosave.handNumber}). Promote it to a named save first?
+                            </div>
+                            <input value={lockPromoteName} onChange={e=>{setLockPromoteName(e.target.value);setLockPromoteError('');}}
+                                placeholder="Save name"
+                                style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:'#fff',fontSize:14,boxSizing:'border-box',outline:'none',marginBottom:8}}
+                            />
+                            {lockPromoteError && <div style={{color:'#ff6b6b',fontSize:12,marginBottom:8}}>{lockPromoteError}</div>}
+                            <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:4}}>
+                                <Btn full bg="#2e7d32" onClick={()=>{
+                                    const n = lockPromoteName.trim();
+                                    if (!n) return setLockPromoteError('Please enter a name');
+                                    socket.emit('promote_autosave', { name: n }, (res) => {
+                                        if (res.success) { setLockProtect(null); socket.emit('lock_room'); }
+                                        else {
+                                            const msg = res.message?.startsWith('DUPLICATE_NAME:')
+                                                ? `A save named '${n}' already exists. Choose a different name.`
+                                                : (res.message || 'Promote failed');
+                                            setLockPromoteError(msg);
+                                        }
+                                    });
+                                }}>💾 Promote and continue</Btn>
+                                <Btn full bg="rgba(255,255,255,0.09)" onClick={()=>{setLockProtect(null);socket.emit('lock_room');}}>Discard and continue</Btn>
+                                <Btn full bg="rgba(255,255,255,0.05)" onClick={()=>setLockProtect(null)}>Cancel</Btn>
+                            </div>
+                        </>) : (<>
+                            <div style={{color:G,fontWeight:700,fontSize:16,marginBottom:12}}>Autosave is ahead of linked save</div>
+                            <div style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:20,lineHeight:1.5}}>
+                                Autosave (Session {lockProtect.autosave.sessionNumber} · Hand #{lockProtect.autosave.handNumber}) is ahead of <strong style={{color:'#fff'}}>{lockProtect.autosave.linkedName || 'linked save'}</strong>. Sync before starting a new game?
+                            </div>
+                            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                                <Btn full bg="#2e7d32" onClick={()=>{
+                                    socket.emit('sync_autosave_with_linked', (res) => {
+                                        if (res.success) { setLockProtect(null); socket.emit('lock_room'); }
+                                        else setLockPromoteError(res.message || 'Sync failed');
+                                    });
+                                }}>🔗 Sync and continue</Btn>
+                                <Btn full bg="rgba(255,255,255,0.09)" onClick={()=>{setLockProtect(null);socket.emit('lock_room');}}>Discard and continue</Btn>
+                                <Btn full bg="rgba(255,255,255,0.05)" onClick={()=>setLockProtect(null)}>Cancel</Btn>
+                            </div>
+                        </>)}
+                    </div>
+                </div>
+            )}
             </div>
         );
     }
