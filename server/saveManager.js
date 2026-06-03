@@ -181,6 +181,24 @@ async function renameSave(saveId, newName) {
 
 async function deleteSave(saveId) {
     if (saveId === 'autosave') throw new Error('Cannot delete autosave');
+
+    try {
+        const { data: autosaveRow } = await supabase
+            .from('saves')
+            .select('data')
+            .eq('id', 'autosave')
+            .single();
+        if (autosaveRow?.data?.linkedSaveId === saveId) {
+            const updatedData = { ...autosaveRow.data, linkedSaveId: null };
+            await supabase
+                .from('saves')
+                .update({ data: updatedData })
+                .eq('id', 'autosave');
+        }
+    } catch (e) {
+        console.error('[deleteSave] linkedSaveId cleanup failed (non-fatal):', e.message);
+    }
+
     const { error } = await supabase
         .from('saves')
         .delete()

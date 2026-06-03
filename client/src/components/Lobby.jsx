@@ -683,9 +683,9 @@ export default function Lobby({ onJoined }) {
                             {detailSave.saveId === 'autosave' ? '⚡ Autosave' : detailSave.name}
                         </div>
                         <div style={{color:DIM,fontSize:12,marginBottom:16}}>Saved on {formatDate(detailSave.savedAt)}</div>
-                        {detailSave.saveId === 'autosave' && detailSave.linkedSaveId && (
+                        {detailSave.saveId === 'autosave' && detailSave.linkedSaveId && detailSave.linkedName && (
                             <div style={{fontSize:12,marginBottom:12,color:detailSave.synced?'#4caf50':'#ef4444'}}>
-                                🔗 Linked: {detailSave.linkedName || detailSave.linkedSaveId}
+                                🔗 Linked: {detailSave.linkedName}
                                 {detailSave.synced ? ' · Synced' : ' · ⚠ Unsynced'}
                             </div>
                         )}
@@ -725,12 +725,17 @@ export default function Lobby({ onJoined }) {
                         {detailSave.saveId === 'autosave' ? (
                             <div style={{display:'flex',flexDirection:'column',gap:10}}>
                                 <Btn full bg="#2e7d32" onClick={doLoadFromDetail}>🔄 Load Game</Btn>
-                                {!detailSave.linkedSaveId && (
-                                    <Btn full bg="rgba(100,180,100,0.15)" onClick={()=>{setPromoteInput('');setPromoteError('');setShowPromoteModal(true);}}>💾 Promote to named save</Btn>
-                                )}
-                                {detailSave.linkedSaveId && !detailSave.synced && (
-                                    <Btn full bg="rgba(255,193,7,0.15)" onClick={doSyncAutosave}>🔗 Sync with {detailSave.linkedName || 'linked save'}</Btn>
-                                )}
+                                {(() => {
+                                    const effectivelyLinked = detailSave.linkedSaveId && detailSave.linkedName;
+                                    return <>
+                                        {!effectivelyLinked && (
+                                            <Btn full bg="rgba(100,180,100,0.15)" onClick={()=>{setPromoteInput('');setPromoteError('');setShowPromoteModal(true);}}>💾 Promote to named save</Btn>
+                                        )}
+                                        {effectivelyLinked && !detailSave.synced && (
+                                            <Btn full bg="rgba(255,193,7,0.15)" onClick={doSyncAutosave}>🔗 Sync with {detailSave.linkedName}</Btn>
+                                        )}
+                                    </>;
+                                })()}
                             </div>
                         ) : (
                             <div style={{display:'flex',gap:8,alignItems:'stretch'}}>
