@@ -224,7 +224,7 @@ function App() {
   const switchPulse = mySeats.length === 2 && !!inactiveSeatId &&
     hasPending(inactiveSeatId, gameState, lobbyState);
 
-  const clearRoom = () => { setStallInfo(null); setLeaveDialog(null); setRoomCode(null); setLobbyState(null); setGameState(null); setMySeats([]); setActiveSeatIdx(0); setAutoSwitch(false); sessionStorage.removeItem('pokeronline_autoSwitch'); clearSession(); };
+  const clearRoom = () => { setStallInfo(null); setLeaveDialog(null); setRoomCode(null); setLobbyState(null); setGameState(null); setMySeats([]); setActiveSeatIdx(0); clearSession(); };
 
   const handleLeaveClick = () => {
     if (inGame) {
