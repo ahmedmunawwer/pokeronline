@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import socket from '../socket';
-import { Btn, Card, Fld, G, DIM } from './UI';
+import { Btn, Card, Fld, G, DIM, computeMedal } from './UI';
 
 const PLAYER_POOL = ['Munz', 'Ray', 'Rizu', 'Rit', 'Manu', 'Ramez', 'Zanu', 'Sapu', 'Fahim'];
 
@@ -775,17 +775,17 @@ export default function Lobby({ onJoined }) {
                             ))}
                         </div>
                         {(() => {
-                            const medals = ['🥇','🥈','🥉'];
                             const scored = (detailSave.stacks||[])
                                 .map(p => ({name:p.name, score:(detailSave.scores||{})[p.id]||0}))
                                 .sort((a,b) => b.score - a.score);
                             if (!scored.some(p => p.score !== 0)) return null;
+                            const medalMap = computeMedal(scored);
                             return (
                                 <div style={{marginBottom:20}}>
                                     <div style={{color:'rgba(255,255,255,0.45)',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>Cumulative Scores</div>
-                                    {scored.map((p,i) => (
+                                    {scored.map(p => (
                                         <div key={p.name} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
-                                            <span style={{color:'#fff',fontSize:14}}>{medals[i]||''} {p.name}</span>
+                                            <span style={{color:'#fff',fontSize:14}}>{medalMap.get(p)} {p.name}</span>
                                             <span style={{color:G,fontSize:13,fontWeight:700}}>{p.score>0?'+':''}{p.score.toLocaleString()}</span>
                                         </div>
                                     ))}
@@ -982,17 +982,17 @@ export default function Lobby({ onJoined }) {
                             <div style={{color:DIM,fontSize:12,marginBottom:16}}>Already joined: {activeGameModal.filledNames.join(', ')}</div>
                         )}
                         {(() => {
-                            const medals = ['🥇','🥈','🥉'];
                             const scored = (activeGameModal.playerNames || [])
                                 .map(p => ({ name: p.name, score: (activeGameModal.scores || {})[p.id] || 0 }))
                                 .sort((a, b) => b.score - a.score);
                             if (!scored.some(p => p.score !== 0)) return null;
+                            const medalMap = computeMedal(scored);
                             return (
                                 <div style={{marginBottom:16}}>
                                     <div style={{color:'rgba(255,255,255,0.45)',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>Cumulative Scores</div>
-                                    {scored.map((p, i) => (
+                                    {scored.map(p => (
                                         <div key={p.name} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
-                                            <span style={{color:'#fff',fontSize:14}}>{medals[i] || ''} {p.name}</span>
+                                            <span style={{color:'#fff',fontSize:14}}>{medalMap.get(p)} {p.name}</span>
                                             <span style={{color:G,fontSize:13,fontWeight:700}}>{p.score > 0 ? '+' : ''}{p.score.toLocaleString()}</span>
                                         </div>
                                     ))}

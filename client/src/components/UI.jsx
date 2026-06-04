@@ -7,6 +7,7 @@ export const MED=["🥇","🥈","🥉","4th","5th","6th","7th","8th","9th","10th
 export const NP={preflop:"flop_reveal",flop:"turn_reveal",turn:"river_reveal",river:"showdown"};
 export const PL={preflop_start:"PRE-FLOP",preflop:"PRE-FLOP",flop_reveal:"FLOP",flop:"FLOP",turn_reveal:"TURN",turn:"TURN",river_reveal:"RIVER",river:"RIVER",showdown:"SHOWDOWN",end:"HAND OVER",session_end:"SESSION OVER"};
 export const RVLI={flop_reveal:{t:"THE FLOP",s:"Reveal 3 community cards",i:"🃏 🃏 🃏"},turn_reveal:{t:"THE TURN",s:"Reveal the 4th card",i:"🃏"},river_reveal:{t:"THE RIVER",s:"Reveal the 5th card",i:"🃏"}};
+export const computeMedal=(scoredList)=>{const result=new Map();const medals=['🥇','🥈','🥉'];let prevScore=null;let rank=0;scoredList.forEach(p=>{if(p.score!==prevScore){rank++;prevScore=p.score;}result.set(p,rank<=3?medals[rank-1]:'');});return result;};
 
 export const Btn=({onClick,bg,children,full,sm,dis,style})=><button onClick={dis?null:onClick} style={Object.assign({background:bg||"#2a8a46",border:"none",borderRadius:10,color:"#fff",padding:sm?"7px 10px":"11px 15px",fontSize:sm?12:14,fontWeight:700,cursor:dis?"default":"pointer",opacity:dis?0.5:1,width:full?"100%":null,boxSizing:"border-box"},style||{})}>{children}</button>;
 export const Card=({children,sx})=><div style={Object.assign({background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:16,padding:16,marginBottom:12},sx||{})}>{children}</div>;
@@ -233,6 +234,8 @@ const HoleCard = ({up}) => (
           const hpsStr=st?Object.entries(st.handsPerSession).sort((a,b)=>Number(a[0])-Number(b[0])).map(e=>e[1]).join(" / "):"—";
           const sh=sessionHistory||[];
           const sortedPls=pls.slice().sort((a,b)=>(scores[b.id]||0)-(scores[a.id]||0));
+          const plsScored=sortedPls.map(p=>({...p,score:scores[p.id]||0}));
+          const plsMedalMap=computeMedal(plsScored);
           const maxSn=sh.length?Math.max(...sh.map(h=>h.sn)):0;
           const snCols=maxSn>0?Array.from({length:maxSn},(_,i)=>i+1):[];
           return(<Ov><DB>
@@ -253,15 +256,15 @@ const HoleCard = ({up}) => (
                 <SS title="🎲 Actions"><SR l="Most raises" v={fmtT(p=>p.raises,v=>v)} hi/><SR l="Most checks" v={fmtT(p=>p.checks,v=>v)}/><SR l="Most folds" v={fmtT(p=>p.folds,v=>v)}/></SS>
                 <SS title="🃏 Best Hand Ever"><SR l="Hand" v={st.bestH?st.bestH.wname+": "+st.bestH.hr:"None"} hi/></SS>
                 <SS title="🎯 Fav Winning Hand">{st.pArr.map(p=><SR key={p.id} l={p.name} v={st.hf[p.id]?st.hf[p.id][0]+" ×"+st.hf[p.id][1]:"—"}/>)}</SS>
-                <SS title="🏅 Scores">{pls.slice().sort((a,b)=>(scores[b.id]||0)-(scores[a.id]||0)).map((p,i)=><SR key={p.id} l={MED[i]+" "+p.name} v={(scores[p.id]||0)+" pts"} hi={i===0}/>)}</SS>
+                <SS title="🏅 Scores">{plsScored.map(p=><SR key={p.id} l={plsMedalMap.get(p)+" "+p.name} v={p.score+" pts"} hi={plsMedalMap.get(p)==='🥇'}/>)}</SS>
               </div>}
             </div>}
             {activeTab==='points'&&!showBreakdown&&<div>
               <div style={{maxHeight:"60vh",overflowY:"auto",marginBottom:12}}>
-                {sortedPls.map((p,i)=>(
+                {plsScored.map(p=>(
                   <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                    <span style={{color:"#fff",fontWeight:i===0?700:400}}>{MED[i]} {p.name}</span>
-                    <span style={{color:G,fontWeight:700,fontSize:15}}>{scores[p.id]||0} pts</span>
+                    <span style={{color:"#fff",fontWeight:plsMedalMap.get(p)==='🥇'?700:400}}>{plsMedalMap.get(p)||''} {p.name}</span>
+                    <span style={{color:G,fontWeight:700,fontSize:15}}>{p.score} pts</span>
                   </div>
                 ))}
               </div>
