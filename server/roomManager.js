@@ -117,7 +117,8 @@ function createLoadedRoom(saveData) {
         gameState: JSON.parse(JSON.stringify(saveData.gameState)),
         expectedNames: saveData.playerNames,
         isLoaded: true,
-        saveId: saveData.saveId
+        saveId: saveData.saveId,
+        saveName: saveData.name || null
     });
 
     return roomCode;
@@ -250,9 +251,37 @@ function getRoomCodeSuggestions() {
     return { nextAvailableHostCode, latestJoineeCode };
 }
 
+function listActiveGames() {
+    const result = [];
+    for (const [roomCode, room] of activeRooms) {
+        if (!room.isLoaded) continue;
+        if (room.setupPhase !== 'loaded_waiting') continue;
+        const filledNames = room.players.map(p => p.name);
+        const openNames = room.expectedNames.filter(
+            n => !filledNames.find(f => f.toLowerCase() === n.toLowerCase())
+        );
+        if (!openNames.length) continue;
+        result.push({
+            roomCode,
+            saveName: room.saveName || null,
+            totalSeats: room.expectedNames.length,
+            filledNames,
+            openNames,
+            sessionNumber: room.gameState?.sn || null,
+            totalSessions: room.gameState?.cfg?.sessions || null,
+            handNumber: room.gameState?.hn || null,
+            phase: room.gameState?.phase || null,
+            scores: room.gameState?.scores || {},
+            playerNames: (room.gameState?.players || []).map(p => ({ id: p.id, name: p.name }))
+        });
+    }
+    return result;
+}
+
 module.exports = {
     createRoom,
     createLoadedRoom,
+    listActiveGames,
     joinRoom,
     joinLoadedRoom,
     setPlayerReady,

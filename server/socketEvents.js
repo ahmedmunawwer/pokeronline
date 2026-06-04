@@ -531,6 +531,10 @@ module.exports = function(io) {
             }
         });
 
+        socket.on('list_active_games', (callback) => {
+            callback({ games: roomManager.listActiveGames() });
+        });
+
         socket.on('load_game', async (data, callback) => {
             try {
                 const save = await saveManager.loadSave(data.saveId);

@@ -30,6 +30,12 @@ export default function Lobby({ onJoined }) {
     const [expectedNames, setExpectedNames] = useState([]);
     const [showJoinDropdown, setShowJoinDropdown] = useState(false);
     const nameReqRef = useRef(0);
+    const [activeGames, setActiveGames] = useState([]);
+    const [activeGameModal, setActiveGameModal] = useState(null);
+    const [agName1, setAgName1] = useState('');
+    const [agName2, setAgName2] = useState('');
+    const [agDualSeat, setAgDualSeat] = useState(false);
+    const [agJoinError, setAgJoinError] = useState('');
 
     // Load state
     const [saves, setSaves] = useState([]);
@@ -117,6 +123,15 @@ export default function Lobby({ onJoined }) {
         };
         if (socket.connected) fetchJoin();
         else socket.once('connect', fetchJoin);
+    }, [view]);
+
+    // Poll active loaded games while on join screen
+    useEffect(() => {
+        if (view !== 'join') return;
+        const poll = () => socket.emit('list_active_games', (res) => setActiveGames(res.games || []));
+        poll();
+        const id = setInterval(poll, 7000);
+        return () => { clearInterval(id); setActiveGames([]); };
     }, [view]);
 
     // Auto-fill host code when entering host screen
@@ -218,6 +233,22 @@ export default function Lobby({ onJoined }) {
                 onJoined(joinCode, joinName.trim(), res.playerId, dualSeat ? joinName2.trim() : undefined, res.secondPlayerId);
             } else {
                 setError(res.message);
+            }
+        });
+    };
+
+    const doAgJoin = () => {
+        if (!agName1) return setAgJoinError('Select your name');
+        if (agDualSeat && !agName2) return setAgJoinError("Select second player's name");
+        socket.emit('join_loaded_game', {
+            roomCode: activeGameModal.roomCode,
+            name: agName1,
+            secondName: agDualSeat ? agName2 : undefined
+        }, (res) => {
+            if (res.success) {
+                onJoined(activeGameModal.roomCode, agName1, res.playerId, agDualSeat ? agName2 : undefined, res.secondPlayerId);
+            } else {
+                setAgJoinError(res.message);
             }
         });
     };
@@ -492,6 +523,33 @@ export default function Lobby({ onJoined }) {
                                 <button onClick={()=>setView("main")} style={{background:"none",border:"none",color:G,fontSize:22,cursor:"pointer",padding:0}}>←</button>
                                 <span style={{color:G,fontWeight:700,fontSize:15}}>Join Room</span>
                             </div>
+                            {activeGames.length > 0 && (
+                                <div style={{marginBottom:16}}>
+                                    <div style={{color:G,fontWeight:700,fontSize:13,marginBottom:8}}>Active Games</div>
+                                    {activeGames.map(g => (
+                                        <div key={g.roomCode}
+                                            onMouseDown={() => { setActiveGameModal(g); setAgName1(''); setAgName2(''); setAgDualSeat(false); setAgJoinError(''); }}
+                                            style={{background:'rgba(240,192,64,0.08)',border:'1px solid rgba(240,192,64,0.25)',borderRadius:10,padding:'10px 12px',marginBottom:8,cursor:'pointer',WebkitTapHighlightColor:'transparent'}}
+                                        >
+                                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
+                                                <span style={{color:'#fff',fontWeight:700,fontSize:15}}>{g.saveName || 'Unnamed Save'}</span>
+                                                <span style={{color:DIM,fontSize:12}}>#{g.roomCode}</span>
+                                            </div>
+                                            <div style={{color:DIM,fontSize:12,marginBottom:g.filledNames.length ? 4 : 0}}>
+                                                {g.filledNames.length}/{g.totalSeats} seats filled
+                                            </div>
+                                            {g.filledNames.length > 0 && (
+                                                <div style={{color:'rgba(255,255,255,0.4)',fontSize:11}}>
+                                                    Joined: {g.filledNames.join(', ')}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {activeGames.length === 0 && (
+                                <div style={{color:DIM,fontSize:12,marginBottom:14}}>No active loaded games. Enter a code below to join.</div>
+                            )}
                             <Fld lbl="Room Code" val={joinCode} ch={handleCodeChange} type="number" />
                             <div style={{color:DIM,fontSize:11,marginTop:-8,marginBottom:10}}>1 digit = new game, 2 digits = loaded game</div>
                             <div style={{marginBottom:14,position:'relative'}}>
@@ -908,6 +966,67 @@ export default function Lobby({ onJoined }) {
                                 setLoadHostName2('');
                             }}>Load without syncing</Btn>
                             <Btn full bg="rgba(255,255,255,0.05)" onClick={()=>setShowSyncLoadModal(false)}>Cancel</Btn>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {activeGameModal && (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.80)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+                    <div style={{background:'#1a0f0a',borderRadius:16,padding:24,width:'100%',maxWidth:420,maxHeight:'85vh',overflowY:'auto'}}>
+                        <div style={{color:G,fontWeight:800,fontSize:20,marginBottom:4}}>{activeGameModal.saveName || 'Unnamed Save'}</div>
+                        <div style={{color:DIM,fontSize:12,marginBottom:8}}>#{activeGameModal.roomCode}</div>
+                        <div style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:activeGameModal.filledNames.length ? 8 : 16}}>
+                            Session {activeGameModal.sessionNumber}{activeGameModal.totalSessions ? ' of ' + activeGameModal.totalSessions : ''} · Hand #{activeGameModal.handNumber}{phaseLabel(activeGameModal.phase) ? ' · ' + phaseLabel(activeGameModal.phase) : ''}
+                        </div>
+                        {activeGameModal.filledNames.length > 0 && (
+                            <div style={{color:DIM,fontSize:12,marginBottom:16}}>Already joined: {activeGameModal.filledNames.join(', ')}</div>
+                        )}
+                        {(() => {
+                            const medals = ['🥇','🥈','🥉'];
+                            const scored = (activeGameModal.playerNames || [])
+                                .map(p => ({ name: p.name, score: (activeGameModal.scores || {})[p.id] || 0 }))
+                                .sort((a, b) => b.score - a.score);
+                            if (!scored.some(p => p.score !== 0)) return null;
+                            return (
+                                <div style={{marginBottom:16}}>
+                                    <div style={{color:'rgba(255,255,255,0.45)',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>Cumulative Scores</div>
+                                    {scored.map((p, i) => (
+                                        <div key={p.name} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+                                            <span style={{color:'#fff',fontSize:14}}>{medals[i] || ''} {p.name}</span>
+                                            <span style={{color:G,fontSize:13,fontWeight:700}}>{p.score > 0 ? '+' : ''}{p.score.toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
+                        <div style={{marginBottom:12}}>
+                            <div style={{color:'rgba(255,255,255,0.5)',fontSize:12,marginBottom:5,fontWeight:600}}>Your Name</div>
+                            <select value={agName1} onChange={e => { const v = e.target.value; setAgName1(v); if (v === agName2) setAgName2(''); setAgJoinError(''); }}
+                                style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:agName1?'#fff':DIM,fontSize:14,boxSizing:'border-box',outline:'none',appearance:'none'}}>
+                                <option value="">Select your name</option>
+                                {activeGameModal.openNames.filter(n => n !== agName2).map(n => <option key={n} value={n}>{n}</option>)}
+                            </select>
+                        </div>
+                        <div style={{marginBottom: agDualSeat ? 10 : 16, marginTop:4}}>
+                            <label style={{color:DIM,fontSize:13,display:'flex',alignItems:'center',gap:8,cursor:'pointer',userSelect:'none'}}>
+                                <input type="checkbox" checked={agDualSeat} onChange={e => { setAgDualSeat(e.target.checked); setAgName2(''); setAgJoinError(''); }} style={{width:16,height:16,accentColor:'#f0c040'}} />
+                                Play 2 players from this device
+                            </label>
+                        </div>
+                        {agDualSeat && (
+                            <div style={{marginBottom:16}}>
+                                <div style={{color:'rgba(255,255,255,0.5)',fontSize:12,marginBottom:5,fontWeight:600}}>Second Player's Name</div>
+                                <select value={agName2} onChange={e => { setAgName2(e.target.value); setAgJoinError(''); }}
+                                    style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:agName2?'#fff':DIM,fontSize:14,boxSizing:'border-box',outline:'none',appearance:'none'}}>
+                                    <option value="">Select second player's name</option>
+                                    {activeGameModal.openNames.filter(n => n !== agName1).map(n => <option key={n} value={n}>{n}</option>)}
+                                </select>
+                            </div>
+                        )}
+                        {agJoinError && <div style={{color:'#f44',fontSize:13,marginBottom:12}}>{agJoinError}</div>}
+                        <div style={{display:'flex',gap:8}}>
+                            <div style={{flex:1}}><Btn full bg="#2e7d32" onClick={doAgJoin}>Join</Btn></div>
+                            <div style={{flex:1}}><Btn full bg="rgba(255,255,255,0.08)" onClick={() => setActiveGameModal(null)}>Cancel</Btn></div>
                         </div>
                     </div>
                 </div>
