@@ -136,6 +136,7 @@ async function listSaves() {
             scores: row.data.gameState?.scores || {},
             stacks: (row.data.gameState?.players || []).map(p => ({ id: p.id, name: p.name, stack: p.stack })),
             cfg: row.data.gameState?.cfg || null,
+            phase: row.data.gameState?.phase || null,
             linkedSaveId: row.data.linkedSaveId || null,
         }));
 
@@ -144,7 +145,9 @@ async function listSaves() {
             const linked = items.find(s => s.saveId === autosave.linkedSaveId);
             autosave.linkedName = linked?.name || null;
             autosave.synced = linked
-                ? autosave.handNumber === linked.handNumber && autosave.sessionNumber === linked.sessionNumber
+                ? autosave.handNumber === linked.handNumber
+                    && autosave.sessionNumber === linked.sessionNumber
+                    && autosave.phase === linked.phase
                 : false;
         }
 
