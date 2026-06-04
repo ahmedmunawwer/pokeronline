@@ -359,6 +359,18 @@ export default function Lobby({ onJoined }) {
         });
     };
 
+    const phaseLabel = (p) => {
+        if (!p) return null;
+        if (p === 'preflop' || p === 'preflop_start') return 'Preflop';
+        if (p === 'flop' || p === 'flop_reveal') return 'Flop';
+        if (p === 'turn' || p === 'turn_reveal') return 'Turn';
+        if (p === 'river' || p === 'river_reveal') return 'River';
+        if (p === 'showdown') return 'Showdown';
+        if (p === 'session_end') return 'Session End';
+        if (p === 'end') return 'Game Over';
+        return null;
+    };
+
     const formatDate = (iso) => {
         try { 
             const d = new Date(iso);
@@ -690,7 +702,7 @@ export default function Lobby({ onJoined }) {
                             </div>
                         )}
                         <div style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:detailSave.cfg?.maxHandsPerSession ? 4 : 16}}>
-                            Session {detailSave.sessionNumber}{detailSave.cfg?.sessions ? ' of ' + detailSave.cfg.sessions : ''} · Hand #{detailSave.handNumber}
+                            Session {detailSave.sessionNumber}{detailSave.cfg?.sessions ? ' of ' + detailSave.cfg.sessions : ''} · Hand #{detailSave.handNumber}{phaseLabel(detailSave.phase) ? ' · ' + phaseLabel(detailSave.phase) : ''}
                         </div>
                         {detailSave.cfg?.maxHandsPerSession && (
                             <div style={{color:DIM,fontSize:12,marginBottom:16}}>Max Hands per Session: {detailSave.cfg.maxHandsPerSession}</div>
