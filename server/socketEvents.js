@@ -552,6 +552,19 @@ module.exports = function(io) {
                     ? data.overrideLoadedFromSaveId
                     : data.saveId;
                 roomManager.getRoom(roomCode).gameState.loadedFromSaveId = lfsId;
+
+                // If loading autosave with a linked UNS, use the UNS's name as the room display name
+                if (data.saveId === 'autosave' && lfsId && lfsId !== 'autosave') {
+                    try {
+                        const linkedSave = await saveManager.loadSave(lfsId);
+                        if (linkedSave?.name) {
+                            roomManager.getRoom(roomCode).saveName = linkedSave.name;
+                        }
+                    } catch (e) {
+                        // non-fatal — saveName stays null
+                    }
+                }
+
                 roomManager.joinLoadedRoom(roomCode, socket.id, hostName);
                 if (data.secondName) {
                     try {
