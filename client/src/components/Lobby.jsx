@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import socket from '../socket';
-import { Btn, Card, Fld, G, DIM, computeMedal } from './UI';
+import { Btn, Card, Fld, G, DIM, computeMedal, ScoreboardStatsView } from './UI';
 
 const PLAYER_POOL = ['Munz', 'Ray', 'Rizu', 'Rit', 'Manu', 'Ramez', 'Zanu', 'Sapu', 'Fahim'];
 
@@ -63,6 +63,8 @@ export default function Lobby({ onJoined }) {
     // Scoreboard state
     const [sbEntries, setSbEntries] = useState([]);
     const [sbFilterTab, setSbFilterTab] = useState('all');
+    const [sbDetailEntry, setSbDetailEntry] = useState(null);
+    const [sbDetailTab, setSbDetailTab] = useState('overview');
 
     // Fetch latest room codes when entering host/join screens
     useEffect(() => {
@@ -793,7 +795,7 @@ export default function Lobby({ onJoined }) {
                                                 if (leaderId) leaderName = players.find(p => p.id === leaderId)?.name || null;
                                             }
                                             return (
-                                                <div key={e.id} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:"12px 14px"}}>
+                                                <div key={e.id} onClick={()=>{setSbDetailEntry(e);setSbDetailTab('overview');}} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:"12px 14px",cursor:'pointer'}}>
                                                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
                                                         <span style={{fontWeight:700,fontSize:14,color:"#fff"}}>{e.name}</span>
                                                         <span style={{fontSize:11,fontWeight:600,color:isCompleted?'#4caf50':'#f0c040',marginLeft:8,whiteSpace:'nowrap'}}>
@@ -1104,6 +1106,120 @@ export default function Lobby({ onJoined }) {
                             <div style={{flex:1}}><Btn full bg="#2e7d32" onClick={doAgJoin}>Join</Btn></div>
                             <div style={{flex:1}}><Btn full bg="rgba(255,255,255,0.08)" onClick={() => setActiveGameModal(null)}>Cancel</Btn></div>
                         </div>
+                    </div>
+                </div>
+            )}
+            {sbDetailEntry && (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:310,display:'flex',alignItems:'flex-end',justifyContent:'center'}} onClick={()=>setSbDetailEntry(null)}>
+                    <div style={{background:'#1a0f0a',borderRadius:'20px 20px 0 0',padding:'24px 20px 32px',width:'100%',maxWidth:460,maxHeight:'85vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
+                            <div style={{flex:1,marginRight:12}}>
+                                <div style={{color:G,fontWeight:800,fontSize:18,lineHeight:1.2}}>{sbDetailEntry.name}</div>
+                                {sbDetailEntry.originalName !== sbDetailEntry.name && (
+                                    <div style={{color:DIM,fontSize:12,marginTop:2}}>Originally "{sbDetailEntry.originalName}"</div>
+                                )}
+                            </div>
+                            <button onClick={()=>setSbDetailEntry(null)} style={{background:'none',border:'none',color:DIM,fontSize:22,cursor:'pointer',padding:0,lineHeight:1,flexShrink:0}}>✕</button>
+                        </div>
+                        <div style={{display:'flex',borderBottom:'1px solid rgba(255,255,255,0.1)',marginBottom:16,marginTop:12}}>
+                            {['overview','breakdown','stats'].map(tab => (
+                                <button key={tab} onClick={()=>setSbDetailTab(tab)} style={{flex:1,background:'none',border:'none',padding:'8px 0',fontSize:13,fontWeight:700,cursor:'pointer',color:sbDetailTab===tab?G:DIM,borderBottom:sbDetailTab===tab?`2px solid ${G}`:'2px solid transparent'}}>
+                                    {tab==='overview'?'Overview':tab==='breakdown'?'Breakdown':'Stats'}
+                                </button>
+                            ))}
+                        </div>
+                        {sbDetailTab === 'overview' && (() => {
+                            const ent = sbDetailEntry;
+                            const isCompleted = ent.completionStatus === 'completed';
+                            const players = ent.gameState?.players || [];
+                            const scores = ent.scores || {};
+                            const scored = players.map(p => ({...p, score: scores[p.id] || 0})).sort((a,b) => b.score - a.score);
+                            const medalMap = computeMedal(scored);
+                            return (
+                                <div>
+                                    <div style={{marginBottom:12}}>
+                                        <span style={{fontSize:12,fontWeight:600,color:isCompleted?'#4caf50':'#f0c040'}}>
+                                            {isCompleted ? '✓ Completed' : '● In Progress'}
+                                        </span>
+                                    </div>
+                                    <div style={{marginBottom:16}}>
+                                        <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:DIM,marginBottom:3}}><span>Created</span><span style={{color:'#fff'}}>{formatDate(ent.createdAt)}</span></div>
+                                        <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:DIM,marginBottom:3}}><span>Updated</span><span style={{color:'#fff'}}>{formatDate(ent.lastUpdatedAt)}</span></div>
+                                        <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:DIM,marginBottom:3}}><span>Sessions</span><span style={{color:'#fff'}}>{ent.sessionsCompleted}{ent.totalSessions ? ' of ' + ent.totalSessions : ''} completed</span></div>
+                                        <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:DIM,marginBottom:3}}><span>Hands</span><span style={{color:'#fff'}}>{ent.totalHands}</span></div>
+                                        {(ent.bb || ent.sb) && <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:DIM}}><span>Blinds</span><span style={{color:'#fff'}}>BB {ent.bb} · SB {ent.sb}</span></div>}
+                                    </div>
+                                    {scored.length > 0 && (
+                                        <div style={{marginBottom:isCompleted&&ent.winner?12:0}}>
+                                            <div style={{color:'rgba(255,255,255,0.45)',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>
+                                                {isCompleted ? 'Final Standings' : 'Current Standings'}
+                                            </div>
+                                            {scored.map(p => (
+                                                <div key={p.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+                                                    <span style={{color:'#fff',fontSize:14}}>{medalMap.get(p)} {p.name}</span>
+                                                    <span style={{color:G,fontSize:13,fontWeight:700}}>{p.score>0?'+':''}{p.score.toLocaleString()} pts</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {isCompleted && ent.winner && (
+                                        <div style={{marginTop:12,padding:'10px 14px',background:'rgba(240,192,64,0.1)',border:'1px solid rgba(240,192,64,0.25)',borderRadius:10,textAlign:'center'}}>
+                                            <div style={{color:G,fontWeight:800,fontSize:15}}>🏆 {ent.winner}</div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
+                        {sbDetailTab === 'breakdown' && (() => {
+                            const ent = sbDetailEntry;
+                            const players = ent.gameState?.players || [];
+                            const scores = ent.scores || {};
+                            const sortedPls = players.slice().sort((a,b) => (scores[b.id]||0) - (scores[a.id]||0));
+                            const sh = ent.sessionHistory || [];
+                            const maxSn = sh.length ? Math.max(...sh.map(h => h.sn)) : 0;
+                            const snCols = maxSn > 0 ? Array.from({length:maxSn},(_,i)=>i+1) : [];
+                            if (snCols.length === 0) return <p style={{color:DIM,fontSize:13,margin:0}}>No completed sessions yet.</p>;
+                            return (
+                                <div style={{display:'flex',maxHeight:'60vh',overflowY:'auto'}}>
+                                    <div style={{flexShrink:0,width:90}}>
+                                        <div style={{height:24}}/>
+                                        {sortedPls.map(p => (
+                                            <div key={p.id} style={{height:34,display:'flex',alignItems:'center',fontSize:12,color:'#fff',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight:4}}>{p.name}</div>
+                                        ))}
+                                    </div>
+                                    <div style={{flex:1,overflowX:'auto'}}>
+                                        <div style={{minWidth:snCols.length*44}}>
+                                            <div style={{display:'flex',height:24,alignItems:'flex-end',paddingBottom:4,borderBottom:'1px solid rgba(255,255,255,0.12)',marginBottom:2}}>
+                                                {snCols.map(sn => <div key={sn} style={{width:44,flexShrink:0,textAlign:'center',color:G,fontWeight:700,fontSize:11}}>S{sn}</div>)}
+                                            </div>
+                                            {sortedPls.map(p => (
+                                                <div key={p.id} style={{display:'flex',alignItems:'center',height:34,borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                                                    {snCols.map(colSn => {
+                                                        const row = sh.find(h => h.sn === colSn);
+                                                        const hasScore = row && row.scores[p.id] !== undefined;
+                                                        const val = hasScore ? row.scores[p.id] : null;
+                                                        return (
+                                                            <div key={colSn} style={{width:44,flexShrink:0,textAlign:'center'}}>
+                                                                {!hasScore ? <span style={{color:DIM,fontSize:12}}>—</span> : row.isTotal ? (
+                                                                    <span><span style={{color:G,fontWeight:700,fontSize:12}}>{val}</span><span style={{color:DIM,fontSize:9,display:'block',lineHeight:1}}>total</span></span>
+                                                                ) : <span style={{color:'#fff',fontSize:12,fontWeight:600}}>{val}</span>}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                        {sbDetailTab === 'stats' && (
+                            <ScoreboardStatsView
+                                history={sbDetailEntry.history || []}
+                                players={sbDetailEntry.gameState?.players || []}
+                                scores={sbDetailEntry.scores || {}}
+                            />
+                        )}
                     </div>
                 </div>
             )}

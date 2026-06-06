@@ -24,7 +24,7 @@ function computeWinner(scores, players, status) {
     return players.find(p => p.id === winnerId)?.name || null;
 }
 
-function buildData(unsId, gameState, name, originalName, createdAt) {
+function buildData(unsId, gameState, name, originalName, createdAt, historyOverride) {
     const now = new Date().toISOString();
     const cfg = gameState?.cfg || null;
     const players = gameState?.players || [];
@@ -40,15 +40,15 @@ function buildData(unsId, gameState, name, originalName, createdAt) {
         totalSessions: cfg?.sessions || null,
         sessionsCompleted: status === 'completed'
             ? Math.min(gameState?.sn || 1, cfg?.sessions || 1)
-            : (gameState?.sn || 1),
-        totalHands: (gameState?.history || []).length,
+            : Math.max(0, (gameState?.sn || 1) - 1),
+        totalHands: (historyOverride || gameState?.history || []).length,
         bb: cfg?.bb || null,
         sb: cfg?.sb || null,
         playerCount: players.length,
         playerNames: players.map(p => p.name),
         scores,
         sessionHistory: gameState?.sessionHistory || [],
-        history: gameState?.history || [],
+        history: historyOverride || gameState?.history || [],
         winner: computeWinner(scores, players, status),
         gameState: {
             players: players.map(p => ({ id: p.id, name: p.name })),
@@ -80,10 +80,18 @@ async function writeEntry(unsId, gameState, name) {
         .single();
     if (fetchErr && fetchErr.code !== 'PGRST116') throw fetchErr;
 
+    const existingHistory = existing ? (existing.data.history || []) : [];
+    const currentHistory = gameState?.history || [];
+    const existingKeys = new Set(existingHistory.map(h => h.sn + ':' + h.hn));
+    const mergedHistory = [
+        ...existingHistory,
+        ...currentHistory.filter(h => !existingKeys.has(h.sn + ':' + h.hn))
+    ];
+
     const now = new Date().toISOString();
 
     if (existing) {
-        const updated = buildData(unsId, gameState, name, existing.data.originalName, existing.data.createdAt);
+        const updated = buildData(unsId, gameState, name, existing.data.originalName, existing.data.createdAt, mergedHistory);
         const { error } = await supabase
             .from('scoreboard')
             .update({ data: updated })
@@ -91,7 +99,7 @@ async function writeEntry(unsId, gameState, name) {
         if (error) throw error;
     } else {
         await enforceCap();
-        const entry = buildData(unsId, gameState, name, name, now);
+        const entry = buildData(unsId, gameState, name, name, now, mergedHistory);
         const { error } = await supabase
             .from('scoreboard')
             .insert({ id: unsId, data: entry });

@@ -387,6 +387,16 @@ function remapPlayerIds(gameState, nameToNewId) {
         }));
     }
 
+    // Remap sessionHistory scores
+    if (gameState.sessionHistory) {
+        gameState.sessionHistory = gameState.sessionHistory.map(entry => ({
+            ...entry,
+            scores: Object.fromEntries(
+                Object.entries(entry.scores || {}).map(([id, v]) => [idMap[id] || id, v])
+            )
+        }));
+    }
+
     // Remap potAward eligibleIds
     if (gameState.potAward && gameState.potAward.eligibleIds) {
         gameState.potAward.eligibleIds = gameState.potAward.eligibleIds.map(id => idMap[id] || id);

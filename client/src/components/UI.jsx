@@ -216,16 +216,16 @@ const HoleCard = ({up}) => (
           hist.forEach(h=>{
             sc[h.sn]=(sc[h.sn]||0)+1;
             pls.forEach(p=>{const st=ps[p.id];if(!st)return;st.hp++;const net=h.net[p.id]||0;if(p.id===h.wid){st.won++;if(net>st.bw)st.bw=net;if(h.hr)st.hr.push(h.hr);}else{st.lost++;if(Math.abs(net)>st.bl)st.bl=Math.abs(net);}});
-            (h.acts||[]).forEach(a=>{const st=ps[a.id];if(!st)return;if(a.type==="fold")st.folds++;else if(a.type==="check")st.checks++;else if(a.type==="raise"||a.type==="allin"){st.raises++;st.bet+=a.amt;if(a.amt>st.bs)st.bs=a.amt;}else if(a.type==="call")st.bet+=a.amt;});
+            (h.acts||[]).forEach(a=>{const st=ps[a.id];if(!st)return;if(a.type==="fold")st.folds++;else if(a.type==="check")st.checks++;else if(a.type==="raise"||a.type==="allin"){st.raises++;st.bet+=a.amt;if(a.amt>st.bs)st.bs=a.amt;}else if(a.type==="call")st.bet+=a.amt;else if(a.type==="blind")st.bet+=a.amt;});
           });
           const maxH=Math.max(...Object.values(sc),0),pArr=Object.values(ps);
           const topAll=fn=>{const mx=Math.max(...pArr.map(p=>fn(p)));return pArr.filter(p=>fn(p)===mx);};
           const top=fn=>topAll(fn)[0]||null;
-          const hf={};pArr.forEach(p=>{const f={};p.hr.forEach(r=>{f[r]=(f[r]||0)+1;});hf[p.id]=Object.entries(f).sort((a,b)=>b[1]-a[1])[0]||null;});
-          return{pArr,maxH,top,topAll,hf,sessionsPlayed:Object.keys(sc).length,handsPerSession:sc,bestH:hist.filter(h=>h.hr).sort((a,b)=>(RV[b.hr]||0)-(RV[a.hr]||0))[0]||null,consistent:pArr.filter(p=>p.hp>0).sort((a,b)=>(b.won/b.hp)-(a.won/a.hp))[0]||null,inconsistent:pArr.filter(p=>p.hp>0).sort((a,b)=>(a.won/a.hp)-(b.won/b.hp))[0]||null};
+          const hf={};pArr.forEach(p=>{const f={};p.hr.forEach(r=>{f[r]=(f[r]||0)+1;});hf[p.id]=Object.entries(f).sort((a,b)=>b[1]-a[1]);});
+          return{pArr,maxH,top,topAll,hf,sessionsPlayed:Object.keys(sc).length,handsPerSession:sc,bestH:hist.filter(h=>h.hr).sort((a,b)=>(RV[b.hr]||0)-(RV[a.hr]||0))[0]||null,consistent:(()=>{const e=pArr.filter(p=>p.hp>0);if(!e.length)return null;const mx=Math.max(...e.map(p=>p.won/p.hp));const tied=e.filter(p=>p.won/p.hp===mx);return{names:tied.map(p=>p.name),rate:mx};})(),inconsistent:(()=>{const e=pArr.filter(p=>p.hp>0);if(!e.length)return null;const mn=Math.min(...e.map(p=>p.won/p.hp));const tied=e.filter(p=>p.won/p.hp===mn);return{names:tied.map(p=>p.name),rate:mn};})()};
         }
         function StatsMod({hist,pls,scores,sessionHistory,onClose}){
-          const [activeTab,setActiveTab]=useState('stats');
+          const [activeTab,setActiveTab]=useState('points');
           const [showBreakdown,setShowBreakdown]=useState(false);
           const st=computeStats(hist,pls);
           const actN=pls.filter(p=>!p.inactive).length;
@@ -251,11 +251,11 @@ const HoleCard = ({up}) => (
             {activeTab==='stats'&&<div style={{maxHeight:"66vh",overflowY:"auto"}}>
               {!st?<p style={{color:DIM,fontSize:13}}>No hands yet.</p>:<div>
                 <SS title="📋 Overview"><SR l="Sessions played" v={String(st.sessionsPlayed)} hi/><SR l="Hands per session" v={hpsStr}/></SS>
-                <SS title="🏆 Performance"><SR l="Most won" v={fmtT(p=>p.won,v=>v)} hi/><SR l="Most lost" v={fmtT(p=>p.lost,v=>v)}/><SR l="Most consistent" v={st.consistent?st.consistent.name:"—"} hi/><SR l="Most inconsistent" v={st.inconsistent?st.inconsistent.name:"—"}/><SR l="Max hands/session" v={String(st.maxH)}/></SS>
+                <SS title="🏆 Performance"><SR l="Most won" v={fmtT(p=>p.won,v=>v)} hi/><SR l="Most lost" v={fmtT(p=>p.lost,v=>v)}/><SR l="Most consistent" v={st.consistent?st.consistent.names.join(" & ")+" ("+Math.round(st.consistent.rate*100)+"%)":"—"} hi/><SR l="Most inconsistent" v={st.inconsistent?st.inconsistent.names.join(" & ")+" ("+Math.round(st.inconsistent.rate*100)+"%)":"—"}/><SR l="Max hands/session" v={String(st.maxH)}/></SS>
                 <SS title="💰 Money"><SR l="Biggest single win" v={fmtT(p=>p.bw,v=>"+"+v,true)} hi/><SR l="Biggest single loss" v={fmtT(p=>p.bl,v=>"-"+v,true)}/><SR l="Highest total bets" v={fmtT(p=>p.bet,v=>v)} hi/><SR l="Lowest total bets" v={lowBet}/><SR l="Biggest single bet" v={fmtT(p=>p.bs,v=>v)}/></SS>
                 <SS title="🎲 Actions"><SR l="Most raises" v={fmtT(p=>p.raises,v=>v)} hi/><SR l="Most checks" v={fmtT(p=>p.checks,v=>v)}/><SR l="Most folds" v={fmtT(p=>p.folds,v=>v)}/></SS>
                 <SS title="🃏 Best Hand Ever"><SR l="Hand" v={st.bestH?st.bestH.wname+": "+st.bestH.hr:"None"} hi/></SS>
-                <SS title="🎯 Fav Winning Hand">{st.pArr.map(p=><SR key={p.id} l={p.name} v={st.hf[p.id]?st.hf[p.id][0]+" ×"+st.hf[p.id][1]:"—"}/>)}</SS>
+                <SS title="🎯 Fav Winning Hand">{st.pArr.map(p=><SR key={p.id} l={p.name} v={st.hf[p.id]?.length?st.hf[p.id].map(([r,c])=>r+" ×"+c).join(", "):"—"}/>)}</SS>
                 <SS title="🏅 Scores">{plsScored.map(p=><SR key={p.id} l={plsMedalMap.get(p)+" "+p.name} v={p.score+" pts"} hi={plsMedalMap.get(p)==='🥇'}/>)}</SS>
               </div>}
             </div>}
@@ -308,6 +308,43 @@ const HoleCard = ({up}) => (
               )}
             </div>}
           </DB></Ov>);
+        }
+        function ScoreboardStatsView({ history, players, scores }) {
+            const st = computeStats(history, players);
+            const sortedPls = players.slice().sort((a, b) => (scores[b.id] || 0) - (scores[a.id] || 0));
+            const plsScored = sortedPls.map(p => ({ ...p, score: scores[p.id] || 0 }));
+            const plsMedalMap = computeMedal(plsScored);
+            if (!st) return <p style={{color:DIM,fontSize:13,margin:0}}>No hands played yet.</p>;
+            return (
+                <div>
+                    <SS title="Per-Player">
+                        {plsScored.map(p => {
+                            const ps = st.pArr.find(x => x.id === p.id);
+                            if (!ps) return null;
+                            const winRate = ps.hp > 0 ? Math.round(ps.won / ps.hp * 100) : 0;
+                            const favHand = st.hf[p.id];
+                            return (
+                                <div key={p.id} style={{marginBottom:10,paddingBottom:10,borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
+                                    <div style={{fontWeight:700,fontSize:13,color:'#fff',marginBottom:5}}>{plsMedalMap.get(p)} {p.name}</div>
+                                    <div style={{display:'flex',gap:16,flexWrap:'wrap',marginBottom:3}}>
+                                        <span style={{color:DIM,fontSize:12}}>Won: <span style={{color:'#fff',fontWeight:600}}>{ps.won} of {ps.hp} ({winRate}%)</span></span>
+                                        {ps.bw > 0 && <span style={{color:DIM,fontSize:12}}>Best win: <span style={{color:G,fontWeight:600}}>+{ps.bw}</span></span>}
+                                    </div>
+                                    <div style={{display:'flex',gap:16,flexWrap:'wrap',marginBottom:3}}>
+                                        <span style={{color:DIM,fontSize:12}}>Raises: <span style={{color:'#fff',fontWeight:600}}>{ps.raises}</span></span>
+                                        <span style={{color:DIM,fontSize:12}}>Folds: <span style={{color:'#fff',fontWeight:600}}>{ps.folds}</span></span>
+                                    </div>
+                                    <div style={{color:DIM,fontSize:12}}>Fav hand: <span style={{color:'#fff',fontWeight:600}}>{favHand?.length ? favHand.map(([r,c])=>r+' \xd7'+c).join(', ') : '—'}</span></div>
+                                </div>
+                            );
+                        })}
+                    </SS>
+                    <SS title="Highlights">
+                        {st.bestH && <SR l="Best hand in game" v={(st.bestH.wname || '?') + ': ' + st.bestH.hr} hi/>}
+                        {st.consistent && <SR l="Most consistent" v={st.consistent.names.join(' & ') + ' (' + Math.round(st.consistent.rate*100) + '%)'}/>}
+                    </SS>
+                </div>
+            );
         }
         function CDlg({d,onClose,onConfirm}){return(<Ov><DB><div style={{textAlign:"center"}}>
           <div style={{fontSize:40,marginBottom:8}}>{d.type==="winner"?"🏆":"🤝"}</div>
@@ -457,4 +494,4 @@ function HandHistoryModal({ history, currentSn, onClose }) {
         </DB></Ov>
     );
 }
-export { HoleCard, CommCard, getCommunityCards, AnimatedPot, AnimatedSidePot, CDlg, SSDlg, HRDlg, StatsMod, ChipStackSVG, buildPots, HandRankModal, PotDetailModal, HandHistoryModal };
+export { HoleCard, CommCard, getCommunityCards, AnimatedPot, AnimatedSidePot, CDlg, SSDlg, HRDlg, StatsMod, ScoreboardStatsView, ChipStackSVG, buildPots, HandRankModal, PotDetailModal, HandHistoryModal };

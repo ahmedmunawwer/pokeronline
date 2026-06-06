@@ -273,7 +273,7 @@ function processAction(state, actionObj) {
             nAI = [...state.ai, state.players[i].id];
         }
         
-        addAct(state, state.players[i].id, isAI ? "allin" : "raise", actual);
+        addAct(state, state.players[i].id, isAI ? "allin" : "raise", cost);
         state.pot += cost;
         state.players = np;
         state.rBets = nRB;
@@ -485,7 +485,6 @@ function processAction(state, actionObj) {
     } else if (action === 'next_session') {
         state.sn++;
         state.handsThisSession = 0;
-        state.history = [];
         state.players = state.players.map(p => ({ ...p, stack: state.origSt[p.id] || 0 }));
         startHand(state);
     }
@@ -660,6 +659,8 @@ function startHand(state) {
     state.cp = [];
     state.pi = 0;
     state.curActs = [];
+    if (sa > 0) addAct(state, pls[si].id, 'blind', sa);
+    if (ba2 > 0) addAct(state, pls[bi].id, 'blind', ba2);
     state.ba = "Raise";
     state.raiseCount = 1;
     state.rChain = [c.bb];
