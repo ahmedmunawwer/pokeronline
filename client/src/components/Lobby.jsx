@@ -4,6 +4,54 @@ import { Btn, Card, Fld, G, DIM, computeMedal, ScoreboardStatsView } from './UI'
 
 const PLAYER_POOL = ['Munz', 'Ray', 'Rizu', 'Rit', 'Manu', 'Ramez', 'Zanu', 'Sapu', 'Fahim'];
 
+function computeAllTimeStats(entries) {
+    const map = {};
+    for (const entry of entries) {
+        const isCompleted = entry.completionStatus === 'completed';
+        for (const name of (entry.playerNames || [])) {
+            const key = name.toLowerCase();
+            if (!map[key]) {
+                map[key] = { displayName: name, gamesPlayed: 0, gamesWon: 0,
+                             handsWon: 0, handsPlayed: 0, biggestWin: 0, biggestLoss: 0,
+                             favHandsMap: {} };
+            } else {
+                map[key].displayName = name;
+            }
+            map[key].gamesPlayed++;
+        }
+        if (isCompleted && entry.winner) {
+            const wk = entry.winner.toLowerCase();
+            if (map[wk]) map[wk].gamesWon++;
+        }
+        for (const hand of (entry.history || [])) {
+            const pnMap = hand.playerNames || {};
+            const netMap = hand.net || {};
+            for (const [id, name] of Object.entries(pnMap)) {
+                const key = name.toLowerCase();
+                if (!map[key]) continue;
+                map[key].handsPlayed++;
+                const net = netMap[id] || 0;
+                if (net > 0 && net > map[key].biggestWin) map[key].biggestWin = net;
+                if (net < 0 && Math.abs(net) > map[key].biggestLoss) map[key].biggestLoss = Math.abs(net);
+            }
+            if (hand.wid && pnMap[hand.wid]) {
+                const wk = pnMap[hand.wid].toLowerCase();
+                if (map[wk]) {
+                    map[wk].handsWon++;
+                    if (hand.hr) map[wk].favHandsMap[hand.hr] = (map[wk].favHandsMap[hand.hr] || 0) + 1;
+                }
+            }
+        }
+    }
+    return Object.values(map).map(p => {
+        const winRate = p.handsPlayed > 0 ? Math.round(p.handsWon / p.handsPlayed * 100) : 0;
+        const favHandArr = Object.entries(p.favHandsMap).sort((a, b) => b[1] - a[1]);
+        const favHand = favHandArr.length ? favHandArr[0][0] + ' ×' + favHandArr[0][1] : '—';
+        return { ...p, winRate, favHand };
+    }).sort((a, b) => b.gamesWon !== a.gamesWon ? b.gamesWon - a.gamesWon : b.winRate - a.winRate);
+}
+
+
 export default function Lobby({ onJoined }) {
     const [view, setView] = useState("main"); // main, host, join, load, load_select
     
@@ -65,6 +113,8 @@ export default function Lobby({ onJoined }) {
     const [sbFilterTab, setSbFilterTab] = useState('all');
     const [sbDetailEntry, setSbDetailEntry] = useState(null);
     const [sbDetailTab, setSbDetailTab] = useState('overview');
+    const [showAllTimeStats, setShowAllTimeStats] = useState(false);
+    const [expandedAtPlayers, setExpandedAtPlayers] = useState(new Set());
 
     // Fetch latest room codes when entering host/join screens
     useEffect(() => {
@@ -762,6 +812,9 @@ export default function Lobby({ onJoined }) {
                                 <button onClick={()=>setView("main")} style={{background:"none",border:"none",color:G,fontSize:22,cursor:"pointer",padding:0}}>←</button>
                                 <span style={{color:G,fontWeight:700,fontSize:15}}>Scoreboard</span>
                             </div>
+                            <button onClick={()=>{setShowAllTimeStats(true);setExpandedAtPlayers(new Set());}} style={{width:'100%',background:'rgba(33,150,243,0.12)',border:'1px solid rgba(33,150,243,0.25)',color:'#64b5f6',borderRadius:10,padding:'9px 0',fontSize:13,fontWeight:700,cursor:'pointer',marginBottom:14}}>
+                                📊 All-Time Stats
+                            </button>
                             <div style={{display:"flex",gap:8,marginBottom:16}}>
                                 {['all','in_progress','completed','terminated'].map(tab => (
                                     <button key={tab} onClick={()=>setSbFilterTab(tab)}
@@ -1224,6 +1277,54 @@ export default function Lobby({ onJoined }) {
                     </div>
                 </div>
             )}
+            {showAllTimeStats && (() => {
+                const stats = computeAllTimeStats(sbEntries);
+                const MEDALS = ['🥇','🥈','🥉'];
+                return (
+                    <div style={{position:'fixed',inset:0,zIndex:310,display:'flex',alignItems:'flex-end',justifyContent:'center'}}
+                         onClick={()=>setShowAllTimeStats(false)}>
+                        <div style={{width:'100%',maxWidth:480,background:'linear-gradient(160deg,#1a0f0a 0%,#0d0704 100%)',borderTopLeftRadius:20,borderTopRightRadius:20,border:'1px solid rgba(255,255,255,0.08)',maxHeight:'82vh',display:'flex',flexDirection:'column'}}
+                             onClick={e=>e.stopPropagation()}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 18px',borderBottom:'1px solid rgba(255,255,255,0.08)',flexShrink:0}}>
+                                <span style={{fontWeight:800,fontSize:16,color:'#fff'}}>📊 All-Time Stats</span>
+                                <button onClick={()=>setShowAllTimeStats(false)} style={{background:'none',border:'none',color:DIM,fontSize:20,cursor:'pointer',padding:0}}>✕</button>
+                            </div>
+                            <div style={{padding:'8px 18px 4px',color:DIM,fontSize:12,flexShrink:0}}>
+                                {stats.length} player{stats.length!==1?'s':''} · {sbEntries.length} game{sbEntries.length!==1?'s':''}
+                            </div>
+                            {stats.length === 0
+                                ? <div style={{padding:30,textAlign:'center',color:DIM}}>No games yet.</div>
+                                : <div style={{padding:'8px 18px 18px',overflowY:'auto',display:'flex',flexDirection:'column',gap:8}}>
+                                    {stats.map((p, i) => {
+                                        const key = p.displayName.toLowerCase();
+                                        const expanded = expandedAtPlayers.has(key);
+                                        const medal = (i < 3 && p.gamesWon > 0) ? MEDALS[i] + ' ' : '';
+                                        return (
+                                            <div key={key} onClick={()=>setExpandedAtPlayers(prev=>{const s=new Set(prev);s.has(key)?s.delete(key):s.add(key);return s;})}
+                                                 style={{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:12,padding:'12px 14px',cursor:'pointer'}}>
+                                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                                                    <span style={{fontWeight:700,fontSize:14,color:'#fff'}}>{medal}{p.displayName}</span>
+                                                    <span style={{color:DIM,fontSize:11}}>{expanded?'▲':'▼'}</span>
+                                                </div>
+                                                <div style={{color:DIM,fontSize:12}}>
+                                                    Games: <span style={{color:'#fff'}}>{p.gamesWon} won</span> / {p.gamesPlayed} played · <span style={{color:G}}>{p.winRate}% hand win rate</span>
+                                                </div>
+                                                {expanded && (
+                                                    <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid rgba(255,255,255,0.07)',display:'flex',flexDirection:'column',gap:4}}>
+                                                        <div style={{color:DIM,fontSize:12}}>Hands: <span style={{color:'#fff'}}>{p.handsWon} won</span> / {p.handsPlayed} played</div>
+                                                        <div style={{color:DIM,fontSize:12}}>Biggest win: <span style={{color:'#4caf50'}}>+{p.biggestWin}</span> · Biggest loss: <span style={{color:'#ef5350'}}>-{p.biggestLoss}</span></div>
+                                                        <div style={{color:DIM,fontSize:12}}>Fav hand: <span style={{color:'#fff'}}>{p.favHand}</span></div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            }
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 }
