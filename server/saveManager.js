@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const scoreboardManager = require('./scoreboardManager');
 
 const MAX_NAMED_SAVES = 7;
 
@@ -52,6 +53,8 @@ async function saveGame(gameState, roomPlayers, options = {}) {
                 .update({ data: mergedData })
                 .eq('id', overwriteSaveId);
             if (updErr) throw updErr;
+            try { await scoreboardManager.writeEntry(overwriteSaveId, stateCopy, mergedData.name); }
+            catch (sbErr) { console.warn('[scoreboard] writeEntry failed (non-fatal):', sbErr.message); }
             return overwriteSaveId;
         }
 
@@ -83,6 +86,8 @@ async function saveGame(gameState, roomPlayers, options = {}) {
             .from('saves')
             .insert({ id: saveId, data: saveData });
         if (insErr) throw insErr;
+        try { await scoreboardManager.writeEntry(saveId, stateCopy, name); }
+        catch (sbErr) { console.warn('[scoreboard] writeEntry failed (non-fatal):', sbErr.message); }
     } catch (e) {
         if (e.message?.startsWith('DUPLICATE_NAME:')) throw e;
         console.error('[saveManager] saveGame failed:', e.message);
@@ -180,6 +185,8 @@ async function renameSave(saveId, newName) {
         .update({ data: updated })
         .eq('id', saveId);
     if (updErr) throw updErr;
+    try { await scoreboardManager.renameEntry(saveId, newName); }
+    catch (sbErr) { console.warn('[scoreboard] renameEntry failed (non-fatal):', sbErr.message); }
 }
 
 async function deleteSave(saveId) {
@@ -241,6 +248,8 @@ async function promoteAutosave(name) {
         .from('saves')
         .insert({ id: saveId, data: saveData });
     if (insErr) throw insErr;
+    try { await scoreboardManager.writeEntry(saveId, saveData.gameState, name); }
+    catch (sbErr) { console.warn('[scoreboard] writeEntry failed (non-fatal):', sbErr.message); }
 
     const { data: autosaveRow, error: fetchErr } = await supabase
         .from('saves')
@@ -286,6 +295,8 @@ async function syncAutosaveWithLinked() {
         .update({ data: mergedData })
         .eq('id', linkedId);
     if (updErr) throw updErr;
+    try { await scoreboardManager.writeEntry(linkedId, mergedData.gameState, mergedData.name); }
+    catch (sbErr) { console.warn('[scoreboard] writeEntry failed (non-fatal):', sbErr.message); }
 }
 
 async function loadSave(saveId) {

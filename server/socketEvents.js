@@ -1,5 +1,6 @@
 const roomManager = require('./roomManager');
 const saveManager = require('./saveManager');
+const scoreboardManager = require('./scoreboardManager');
 
 const AUTOSAVE_PHASES = new Set(['preflop_start', 'flop_reveal', 'turn_reveal', 'river_reveal']);
 
@@ -533,6 +534,15 @@ module.exports = function(io) {
 
         socket.on('list_active_games', (callback) => {
             callback({ games: roomManager.listActiveGames() });
+        });
+
+        socket.on('list_scoreboard', async (callback) => {
+            try {
+                const entries = await scoreboardManager.listEntries();
+                callback({ success: true, entries });
+            } catch (e) {
+                callback({ success: false, entries: [], message: e.message });
+            }
         });
 
         socket.on('load_game', async (data, callback) => {

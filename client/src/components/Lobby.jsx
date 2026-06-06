@@ -60,6 +60,10 @@ export default function Lobby({ onJoined }) {
 
     const [error, setError] = useState("");
 
+    // Scoreboard state
+    const [sbEntries, setSbEntries] = useState([]);
+    const [sbFilterTab, setSbFilterTab] = useState('all');
+
     // Fetch latest room codes when entering host/join screens
     useEffect(() => {
         if (view !== 'main') return;
@@ -402,6 +406,11 @@ export default function Lobby({ onJoined }) {
         return null;
     };
 
+    useEffect(() => {
+        if (view !== 'scoreboard') return;
+        socket.emit('list_scoreboard', (res) => setSbEntries(res.entries || []));
+    }, [view]);
+
     const formatDate = (iso) => {
         try { 
             const d = new Date(iso);
@@ -442,6 +451,7 @@ export default function Lobby({ onJoined }) {
                             <Btn full onClick={() => { setView("host"); setError(""); }}>Host New Game</Btn>
                             <Btn full bg="#1976d2" onClick={() => { setView("join"); setError(""); }}>Join Game</Btn>
                             <Btn full bg="#7a4a1a" onClick={openLoadView}>📂 Load Game</Btn>
+                            <Btn full bg="#4a3728" onClick={() => setView("scoreboard")}>🏆 Scoreboard</Btn>
                         </div>
                     )}
 
@@ -743,6 +753,72 @@ export default function Lobby({ onJoined }) {
                             )}
                         </div>
                     )}
+
+                    {view === "scoreboard" && (
+                        <div style={{textAlign:"left"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                                <button onClick={()=>setView("main")} style={{background:"none",border:"none",color:G,fontSize:22,cursor:"pointer",padding:0}}>←</button>
+                                <span style={{color:G,fontWeight:700,fontSize:15}}>Scoreboard</span>
+                            </div>
+                            <div style={{display:"flex",gap:8,marginBottom:16}}>
+                                {['all','in_progress','completed'].map(tab => (
+                                    <button key={tab} onClick={()=>setSbFilterTab(tab)}
+                                        style={{flex:1,padding:'7px 0',borderRadius:8,border:'1px solid rgba(255,255,255,0.15)',background:sbFilterTab===tab?'rgba(240,192,64,0.2)':'rgba(255,255,255,0.05)',color:sbFilterTab===tab?G:'rgba(255,255,255,0.5)',fontSize:12,fontWeight:sbFilterTab===tab?700:400,cursor:'pointer'}}>
+                                        {tab==='all'?'All':tab==='in_progress'?'In Progress':'Completed'}
+                                    </button>
+                                ))}
+                            </div>
+                            {(() => {
+                                const filtered = sbEntries.filter(e => sbFilterTab === 'all' || e.completionStatus === sbFilterTab);
+                                if (filtered.length === 0) return (
+                                    <div style={{textAlign:"center",padding:30,color:DIM}}>
+                                        <div style={{fontSize:36,marginBottom:10}}>🏆</div>
+                                        {sbEntries.length === 0
+                                            ? 'No games yet. Save a named game to start tracking.'
+                                            : 'No ' + (sbFilterTab === 'in_progress' ? 'in-progress' : 'completed') + ' games.'}
+                                    </div>
+                                );
+                                return (
+                                    <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:380,overflowY:"auto"}}>
+                                        {filtered.map(e => {
+                                            const isCompleted = e.completionStatus === 'completed';
+                                            const players = e.gameState?.players || [];
+                                            const scores = e.scores || {};
+                                            let leaderName = null;
+                                            if (!isCompleted) {
+                                                let maxScore = 0, leaderId = null;
+                                                for (const [id, score] of Object.entries(scores)) {
+                                                    if (score > maxScore) { maxScore = score; leaderId = id; }
+                                                }
+                                                if (leaderId) leaderName = players.find(p => p.id === leaderId)?.name || null;
+                                            }
+                                            return (
+                                                <div key={e.id} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:"12px 14px"}}>
+                                                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                                                        <span style={{fontWeight:700,fontSize:14,color:"#fff"}}>{e.name}</span>
+                                                        <span style={{fontSize:11,fontWeight:600,color:isCompleted?'#4caf50':'#f0c040',marginLeft:8,whiteSpace:'nowrap'}}>
+                                                            {isCompleted ? '✓ Completed' : '● In Progress'}
+                                                        </span>
+                                                    </div>
+                                                    <div style={{color:DIM,fontSize:12,marginBottom:3}}>{(e.playerNames||[]).join(', ')}</div>
+                                                    <div style={{color:DIM,fontSize:12,marginBottom:3}}>
+                                                        {isCompleted
+                                                            ? (e.winner ? 'Winner: ' + e.winner : '—')
+                                                            : (leaderName ? 'Leading: ' + leaderName : '—')}
+                                                    </div>
+                                                    <div style={{color:DIM,fontSize:12,marginBottom:3}}>
+                                                        Session {e.sessionsCompleted}{e.totalSessions ? ' of ' + e.totalSessions : ''} · {e.totalHands} hand{e.totalHands!==1?'s':''}
+                                                    </div>
+                                                    <div style={{color:DIM,fontSize:11}}>Updated {formatDate(e.lastUpdatedAt)}</div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    )}
+
                 </Card>
             </div>
             {detailSave && !showRename && (
