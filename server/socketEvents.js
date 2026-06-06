@@ -2,7 +2,7 @@ const roomManager = require('./roomManager');
 const saveManager = require('./saveManager');
 const scoreboardManager = require('./scoreboardManager');
 
-const AUTOSAVE_PHASES = new Set(['preflop_start', 'flop_reveal', 'turn_reveal', 'river_reveal']);
+const AUTOSAVE_PHASES = new Set(['preflop_start', 'flop_reveal', 'turn_reveal', 'river_reveal', 'end', 'session_end']);
 
 const DEALER_CEREMONY_PHASES = new Set([
     'preflop_start', 'flop_reveal', 'turn_reveal', 'river_reveal',
@@ -335,7 +335,7 @@ module.exports = function(io) {
             }
 
             io.to(socket.currentRoom).emit('game_state_update', gs);
-            if (AUTOSAVE_PHASES.has(gs.phase) && !AUTOSAVE_PHASES.has(phaseBefore)) {
+            if (AUTOSAVE_PHASES.has(gs.phase)) {
                 saveManager.saveAutosave(gs, room.players);
             }
         });
@@ -465,6 +465,11 @@ module.exports = function(io) {
                 if (!overwriteSaveId) {
                     room.gameState.loadedFromSaveId = saveId;
                     io.to(socket.currentRoom).emit('game_state_update', room.gameState);
+                }
+                try {
+                    await saveManager.saveAutosave(room.gameState, room.players);
+                } catch (e) {
+                    console.warn('[save_game] autosave mirror failed (non-fatal):', e.message);
                 }
                 callback({ success: true, saveId });
             } catch (e) {
