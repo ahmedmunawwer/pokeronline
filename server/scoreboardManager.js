@@ -133,4 +133,15 @@ async function listEntries() {
     return (data || []).map(row => row.data);
 }
 
-module.exports = { writeEntry, renameEntry, listEntries };
+async function markTerminated(unsId) {
+    const { data: existing, error: fetchErr } = await supabase
+        .from('scoreboard').select('data').eq('id', unsId).single();
+    if (fetchErr && fetchErr.code !== 'PGRST116') throw fetchErr;
+    if (!existing) return;
+    if (existing.data.completionStatus !== 'in_progress') return;
+    const updated = { ...existing.data, completionStatus: 'terminated', lastUpdatedAt: new Date().toISOString() };
+    const { error } = await supabase.from('scoreboard').update({ data: updated }).eq('id', unsId);
+    if (error) throw error;
+}
+
+module.exports = { writeEntry, renameEntry, listEntries, markTerminated };

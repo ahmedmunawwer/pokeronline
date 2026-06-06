@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import socket from '../socket';
 import { Btn, Card, Fld, G, DIM, computeMedal, ScoreboardStatsView } from './UI';
 
@@ -763,10 +763,10 @@ export default function Lobby({ onJoined }) {
                                 <span style={{color:G,fontWeight:700,fontSize:15}}>Scoreboard</span>
                             </div>
                             <div style={{display:"flex",gap:8,marginBottom:16}}>
-                                {['all','in_progress','completed'].map(tab => (
+                                {['all','in_progress','completed','terminated'].map(tab => (
                                     <button key={tab} onClick={()=>setSbFilterTab(tab)}
                                         style={{flex:1,padding:'7px 0',borderRadius:8,border:'1px solid rgba(255,255,255,0.15)',background:sbFilterTab===tab?'rgba(240,192,64,0.2)':'rgba(255,255,255,0.05)',color:sbFilterTab===tab?G:'rgba(255,255,255,0.5)',fontSize:12,fontWeight:sbFilterTab===tab?700:400,cursor:'pointer'}}>
-                                        {tab==='all'?'All':tab==='in_progress'?'In Progress':'Completed'}
+                                        {tab==='all'?'All':tab==='in_progress'?'In Progress':tab==='completed'?'Completed':'Terminated'}
                                     </button>
                                 ))}
                             </div>
@@ -777,7 +777,7 @@ export default function Lobby({ onJoined }) {
                                         <div style={{fontSize:36,marginBottom:10}}>🏆</div>
                                         {sbEntries.length === 0
                                             ? 'No games yet. Save a named game to start tracking.'
-                                            : 'No ' + (sbFilterTab === 'in_progress' ? 'in-progress' : 'completed') + ' games.'}
+                                            : 'No ' + (sbFilterTab === 'in_progress' ? 'in-progress' : sbFilterTab === 'terminated' ? 'terminated' : 'completed') + ' games.'}
                                     </div>
                                 );
                                 return (
@@ -798,8 +798,8 @@ export default function Lobby({ onJoined }) {
                                                 <div key={e.id} onClick={()=>{setSbDetailEntry(e);setSbDetailTab('overview');}} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:"12px 14px",cursor:'pointer'}}>
                                                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
                                                         <span style={{fontWeight:700,fontSize:14,color:"#fff"}}>{e.name}</span>
-                                                        <span style={{fontSize:11,fontWeight:600,color:isCompleted?'#4caf50':'#f0c040',marginLeft:8,whiteSpace:'nowrap'}}>
-                                                            {isCompleted ? '✓ Completed' : '● In Progress'}
+                                                        <span style={{fontSize:11,fontWeight:600,color:isCompleted?'#4caf50':e.completionStatus==='terminated'?'#ef5350':'#f0c040',marginLeft:8,whiteSpace:'nowrap'}}>
+                                                            {isCompleted ? '✓ Completed' : e.completionStatus === 'terminated' ? '⊗ Terminated' : '● In Progress'}
                                                         </span>
                                                     </div>
                                                     <div style={{color:DIM,fontSize:12,marginBottom:3}}>{(e.playerNames||[]).join(', ')}</div>
@@ -1131,6 +1131,7 @@ export default function Lobby({ onJoined }) {
                         {sbDetailTab === 'overview' && (() => {
                             const ent = sbDetailEntry;
                             const isCompleted = ent.completionStatus === 'completed';
+                            const isTerminated = ent.completionStatus === 'terminated';
                             const players = ent.gameState?.players || [];
                             const scores = ent.scores || {};
                             const scored = players.map(p => ({...p, score: scores[p.id] || 0})).sort((a,b) => b.score - a.score);
@@ -1138,8 +1139,8 @@ export default function Lobby({ onJoined }) {
                             return (
                                 <div>
                                     <div style={{marginBottom:12}}>
-                                        <span style={{fontSize:12,fontWeight:600,color:isCompleted?'#4caf50':'#f0c040'}}>
-                                            {isCompleted ? '✓ Completed' : '● In Progress'}
+                                        <span style={{fontSize:12,fontWeight:600,color:isCompleted?'#4caf50':isTerminated?'#ef5350':'#f0c040'}}>
+                                            {isCompleted ? '✓ Completed' : isTerminated ? '⊗ Terminated' : '● In Progress'}
                                         </span>
                                     </div>
                                     <div style={{marginBottom:16}}>
@@ -1152,7 +1153,7 @@ export default function Lobby({ onJoined }) {
                                     {scored.length > 0 && (
                                         <div style={{marginBottom:isCompleted&&ent.winner?12:0}}>
                                             <div style={{color:'rgba(255,255,255,0.45)',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>
-                                                {isCompleted ? 'Final Standings' : 'Current Standings'}
+                                                {isCompleted ? 'Final Standings' : isTerminated ? 'Standings at Termination' : 'Current Standings'}
                                             </div>
                                             {scored.map(p => (
                                                 <div key={p.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}}>

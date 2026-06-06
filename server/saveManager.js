@@ -214,6 +214,8 @@ async function deleteSave(saveId) {
         .delete()
         .eq('id', saveId);
     if (error) throw error;
+    try { await scoreboardManager.markTerminated(saveId); }
+    catch (sbErr) { console.warn('[scoreboard] markTerminated failed (non-fatal):', sbErr.message); }
 }
 
 async function promoteAutosave(name) {

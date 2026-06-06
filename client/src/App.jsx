@@ -285,16 +285,18 @@ function App() {
               <button
                 onClick={() => { const next = !autoSwitch; setAutoSwitch(next); sessionStorage.setItem('pokeronline_autoSwitch', next ? '1' : '0'); }}
                 style={{background:autoSwitch?'rgba(240,192,64,0.25)':'rgba(255,255,255,0.06)',border:`1px solid ${autoSwitch?'rgba(240,192,64,0.6)':'rgba(255,255,255,0.18)'}`,color:autoSwitch?'#f0c040':'rgba(255,255,255,0.35)',padding:'6px 8px',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer'}}
-              >Auto</button>
-              <button
-                className={switchPulse && !autoSwitch ? 'switch-pulse' : undefined}
-                onClick={() => { const n = 1 - activeSeatIdx; setActiveSeatIdx(n); sessionStorage.setItem(ACTIVE_SEAT_KEY, String(n)); }}
-                style={{background:'rgba(240,192,64,0.15)',border:'1px solid rgba(240,192,64,0.4)',color:'#f0c040',padding:'6px 10px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer'}}
-              >Switch</button>
+              >{autoSwitch ? 'Auto' : 'Manual'}</button>
+              {!autoSwitch && (
+                <button
+                  className={switchPulse ? 'switch-pulse' : undefined}
+                  onClick={() => { const n = 1 - activeSeatIdx; setActiveSeatIdx(n); sessionStorage.setItem(ACTIVE_SEAT_KEY, String(n)); }}
+                  style={{background:'rgba(240,192,64,0.15)',border:'1px solid rgba(240,192,64,0.4)',color:'#f0c040',padding:'6px 8px',borderRadius:8,fontSize:14,fontWeight:700,cursor:'pointer'}}
+                >⇄</button>
+              )}
             </>
           )}
           <button onClick={() => window.location.reload()} style={{background:'rgba(33,150,243,0.15)',border:'1px solid rgba(33,150,243,0.35)',color:'#64b5f6',padding:'6px 8px',borderRadius:8,fontSize:14,fontWeight:700,cursor:'pointer'}}>↻</button>
-          <button onClick={handleLeaveClick} style={{background:'rgba(211,47,47,0.2)',border:'1px solid rgba(211,47,47,0.5)',color:'#ff8a80',padding:'6px 12px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer'}}>Leave</button>
+          <button onClick={handleLeaveClick} style={{background:'rgba(211,47,47,0.2)',border:'1px solid rgba(211,47,47,0.5)',color:'#ff8a80',padding:'6px 8px',borderRadius:8,fontSize:14,fontWeight:700,cursor:'pointer'}}>⏏</button>
         </div>
       </div>
       {leaveDialog && <ConfirmDialog title={leaveDialog.title} body={leaveDialog.body} confirmLabel={leaveDialog.confirmLabel} confirmBg={leaveDialog.confirmBg} onConfirm={leaveDialog.onConfirm} onCancel={() => setLeaveDialog(null)} />}
