@@ -512,7 +512,12 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                                 )}
                             </div>
 
-                            {/* Section 2: player stacks */}
+                            {/* Section 2: last action */}
+                            <div className="rail-section rail-section--last">
+                                <LastActionPanel log={log} />
+                            </div>
+
+                            {/* Section 3: player stacks */}
                             <div className="rail-section rail-section--stacks">
                                 <PlayerStacks
                                     players={players}
@@ -521,11 +526,6 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                                     sessionNum={sn}
                                     sessionsTotal={cfg.sessions}
                                 />
-                            </div>
-
-                            {/* Section 3: last action */}
-                            <div className="rail-section rail-section--last">
-                                <LastActionPanel log={log} />
                             </div>
 
                         </div>
@@ -903,7 +903,11 @@ function PlayerStacks({ players, dealer, sbI, bbI, actI, myId, sessionNum, sessi
                 <div style={{fontSize:9, color:DIM_STRONG, letterSpacing:0.5, fontWeight:600, textTransform:'uppercase'}}>Session {sessionNum}/{sessionsTotal}</div>
             </div>
             <div style={{display:'flex', flexDirection:'column', gap:3, flex:'1 1 auto', minHeight:0}}>
-                {players.map((p, i) => {
+                {players
+                    .map((p, i) => ({ ...p, _origI: i }))
+                    .sort((a, b) => b.stack - a.stack)
+                    .map((p) => {
+                    const i = p._origI;
                     const isMe = p.id === myId;
                     const isAct = i === actI;
                     const posTag =
