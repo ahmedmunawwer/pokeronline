@@ -161,6 +161,12 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
         const hasNonHostPlayers = nonHostPlayers.length > 0;
         const canProceed = hasNonHostPlayers && nonHostPlayers.every(p => p.ready);
 
+        const doReorder = (fromIdx, toIdx) => {
+            const newOrder = players.map(p => p.id);
+            [newOrder[fromIdx], newOrder[toIdx]] = [newOrder[toIdx], newOrder[fromIdx]];
+            socket.emit('reorder_players', { newOrder });
+        };
+
         return (
             <div style={{display:"flex",justifyContent:"center",alignItems:"center",minHeight:"80vh",padding:20}}>
                 <div style={{maxWidth: 460, width: "100%"}}>
@@ -173,13 +179,27 @@ export default function SetupFlow({ lobbyState, activeSeatId, onLeave }) {
                         <div style={{display:"flex", flexDirection:"column", gap:10, marginBottom:20}}>
                             {players.map((p, i) => (
                                 <div key={p.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", background:"rgba(255,255,255,0.05)", padding:"10px 15px", borderRadius:10}}>
-                                    <div style={{display:"flex", alignItems:"center", gap:10}}>
-                                        <div style={{width:10, height:10, borderRadius:"50%", background:PLAYER_COLORS[i%PLAYER_COLORS.length]}}></div>
-                                        <span style={{color: p.id===activeId ? G : (p.id===socket.id||p.id===socket.id+'_2') ? 'rgba(240,192,64,0.5)' : '#fff', fontWeight:700}}>
+                                    <div style={{display:"flex", alignItems:"center", gap:10, flex:1, minWidth:0}}>
+                                        <div style={{width:10, height:10, borderRadius:"50%", background:PLAYER_COLORS[i%PLAYER_COLORS.length], flexShrink:0}}></div>
+                                        <span style={{color: p.id===activeId ? G : (p.id===socket.id||p.id===socket.id+'_2') ? 'rgba(240,192,64,0.5)' : '#fff', fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
                                             {p.name} {p.isHost && <span style={{color:DIM, fontSize:11, marginLeft:4}}>(Host)</span>}
                                         </span>
                                     </div>
-                                    <div>
+                                    {isHost && (
+                                        <div style={{display:"flex", flexDirection:"column", gap:2, marginLeft:8, marginRight:8, flexShrink:0}}>
+                                            <button
+                                                disabled={i === 0}
+                                                onMouseDown={() => doReorder(i, i - 1)}
+                                                style={{background:"none", border:"none", color: i===0 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.55)", cursor: i===0 ? "default" : "pointer", fontSize:11, padding:"1px 4px", lineHeight:1}}
+                                            >▲</button>
+                                            <button
+                                                disabled={i === players.length - 1}
+                                                onMouseDown={() => doReorder(i, i + 1)}
+                                                style={{background:"none", border:"none", color: i===players.length-1 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.55)", cursor: i===players.length-1 ? "default" : "pointer", fontSize:11, padding:"1px 4px", lineHeight:1}}
+                                            >▼</button>
+                                        </div>
+                                    )}
+                                    <div style={{flexShrink:0}}>
                                         {p.ready ? <span style={{color:"#4caf50", fontWeight:800, fontSize:13}}>READY</span> : <span style={{color:DIM, fontSize:13}}>Waiting...</span>}
                                     </div>
                                 </div>

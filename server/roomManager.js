@@ -298,12 +298,15 @@ function listInProgressGames() {
     for (const [roomCode, room] of activeRooms) {
         if (room.setupPhase !== 'in_game') continue;
         const gs = room.gameState;
-        const disconnectedPlayers = (gs?.players || []).filter(p => p.disconnected && !p.inactive);
+        const players = gs?.players || [];
+        const disconnectedPlayers = players.filter(p => p.disconnected && !p.inactive);
+        const connectedPlayers = players.filter(p => !p.disconnected && !p.inactive);
         if (!disconnectedPlayers.length) continue;
+        if (!connectedPlayers.length) continue;
         result.push({
             roomCode,
             saveName: room.saveName || null,
-            playerNames: (gs?.players || []).map(p => ({ id: p.id, name: p.name })),
+            playerNames: players.map(p => ({ id: p.id, name: p.name })),
             disconnectedNames: disconnectedPlayers.map(p => p.name),
             sessionNumber: gs?.sn || null,
             totalSessions: gs?.cfg?.sessions || null,

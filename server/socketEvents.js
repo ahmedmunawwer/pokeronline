@@ -158,6 +158,26 @@ module.exports = function(io) {
             io.to(socket.currentRoom).emit('lobby_update', room);
         });
 
+        socket.on('reorder_players', (data, callback) => {
+            if (!socket.currentRoom) return callback && callback({ success: false });
+            const room = roomManager.getRoom(socket.currentRoom);
+            if (!room || room.hostId !== socket.id) return callback && callback({ success: false });
+            if (room.setupPhase !== 'waiting') return callback && callback({ success: false });
+
+            const { newOrder } = data || {};
+            if (!Array.isArray(newOrder) || newOrder.length !== room.players.length)
+                return callback && callback({ success: false, reason: 'invalid_order' });
+
+            const idSet = new Set(room.players.map(p => p.id));
+            const orderSet = new Set(newOrder);
+            if (orderSet.size !== newOrder.length || ![...orderSet].every(id => idSet.has(id)))
+                return callback && callback({ success: false, reason: 'player_list_changed' });
+
+            room.players = newOrder.map(id => room.players.find(p => p.id === id));
+            io.to(socket.currentRoom).emit('lobby_update', room);
+            if (callback) callback({ success: true });
+        });
+
         socket.on('lock_room', () => {
             if (!socket.currentRoom) return;
             const room = roomManager.getRoom(socket.currentRoom);
