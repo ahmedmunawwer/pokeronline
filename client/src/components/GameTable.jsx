@@ -445,6 +445,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                                                 <div style={{display:'flex', alignItems:'center', justifyContent:'center', gap:6, marginBottom:2}}>
                                                     <div style={{width:9, height:9, borderRadius:'50%', background: p.inactive ? '#999' : PLAYER_COLORS[i % PLAYER_COLORS.length], boxShadow:`0 0 8px ${p.inactive ? 'transparent' : PLAYER_COLORS[i % PLAYER_COLORS.length]}`}}></div>
                                                     {p.inactive && <span style={{fontSize:10, fontWeight:700, color:'#888'}}>LEFT</span>}
+                                                    {p.disconnected && !p.inactive && <span style={{fontSize:10, fontWeight:700, color:'#f0a040'}}>AWAY</span>}
                                                 </div>
                                                 {!p.inactive && (
                                                     <div style={{fontSize:11, fontWeight:700, color: p.folded ? DIM : '#fff', letterSpacing:0.3, lineHeight:1.2, marginBottom:2}}>
@@ -477,7 +478,7 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                                             }}>
                                                 <div style={{width:7, height:7, borderRadius:'50%', background: p.inactive ? '#999' : PLAYER_COLORS[i % PLAYER_COLORS.length], boxShadow:`0 0 5px ${p.inactive ? 'transparent' : PLAYER_COLORS[i % PLAYER_COLORS.length]}`, flexShrink:0}}></div>
                                                 <div style={{display:'flex', flexDirection:'column', minWidth:0}}>
-                                                    <div style={{fontSize:10, fontWeight:700, color: p.folded ? 'rgba(255,255,255,0.45)' : '#fff', textDecoration: p.folded ? 'line-through' : 'none', maxWidth:72, overflow:'hidden', textOverflow:'ellipsis', lineHeight:1.15}}>{p.inactive ? 'LEFT' : p.name}</div>
+                                                    <div style={{fontSize:10, fontWeight:700, color: p.folded ? 'rgba(255,255,255,0.45)' : '#fff', textDecoration: p.folded ? 'line-through' : 'none', maxWidth:72, overflow:'hidden', textOverflow:'ellipsis', lineHeight:1.15}}>{p.inactive ? 'LEFT' : p.disconnected ? 'AWAY' : p.name}</div>
                                                     {betAmt > 0 && !p.folded && !p.inactive && (
                                                         <div style={{fontSize:9, fontWeight:800, color:G, lineHeight:1.1, letterSpacing:0.3}}>${betAmt}</div>
                                                     )}

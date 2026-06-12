@@ -228,6 +228,21 @@ function markPlayerInactive(roomCode, socketId) {
     room.sockets.delete(socketId);
 }
 
+function markPlayerDisconnected(roomCode, socketId) {
+    const room = activeRooms.get(roomCode);
+    if (!room) return;
+    const seatIds = room.socketSeats[socketId] || [socketId];
+    for (const seatId of seatIds) {
+        const player = room.players.find(p => p.id === seatId);
+        if (player) player.disconnected = true;
+        if (room.gameState && room.gameState.players) {
+            const gp = room.gameState.players.find(p => p.id === seatId);
+            if (gp) gp.disconnected = true;
+        }
+    }
+    room.sockets.delete(socketId);
+}
+
 function getRoomCodeSuggestions() {
     // Next available host code: lowest unused single digit
     let nextAvailableHostCode = null;
@@ -278,10 +293,33 @@ function listActiveGames() {
     return result;
 }
 
+function listInProgressGames() {
+    const result = [];
+    for (const [roomCode, room] of activeRooms) {
+        if (room.setupPhase !== 'in_game') continue;
+        const gs = room.gameState;
+        const disconnectedPlayers = (gs?.players || []).filter(p => p.disconnected && !p.inactive);
+        if (!disconnectedPlayers.length) continue;
+        result.push({
+            roomCode,
+            saveName: room.saveName || null,
+            playerNames: (gs?.players || []).map(p => ({ id: p.id, name: p.name })),
+            disconnectedNames: disconnectedPlayers.map(p => p.name),
+            sessionNumber: gs?.sn || null,
+            totalSessions: gs?.cfg?.sessions || null,
+            handNumber: gs?.hn || null,
+            phase: gs?.phase || null,
+            scores: gs?.scores || {}
+        });
+    }
+    return result;
+}
+
 module.exports = {
     createRoom,
     createLoadedRoom,
     listActiveGames,
+    listInProgressGames,
     joinRoom,
     joinLoadedRoom,
     setPlayerReady,
@@ -290,5 +328,6 @@ module.exports = {
     deleteRoom,
     addClientToRoom,
     removeClientFromRoom,
-    markPlayerInactive
+    markPlayerInactive,
+    markPlayerDisconnected
 };

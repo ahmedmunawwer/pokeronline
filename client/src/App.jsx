@@ -83,7 +83,6 @@ function App() {
   const [hostEnded, setHostEnded] = useState(false);
   const [leaveDialog, setLeaveDialog] = useState(null);
   const [reconnecting, setReconnecting] = useState(false);
-  const [stallInfo, setStallInfo] = useState(null);
   const [mySeats, setMySeats] = useState([]);
   const [activeSeatIdx, setActiveSeatIdx] = useState(() => {
     const v = sessionStorage.getItem(ACTIVE_SEAT_KEY);
@@ -131,14 +130,12 @@ function App() {
     const handleLobbyUpdate = (room) => setLobbyState(room);
     const handleRoomError = (msg) => { alert(msg); setRoomCode(null); };
     const handleHostEnded = () => setHostEnded(true);
-    const handleGameStalled = (data) => setStallInfo(data);
 
     socket.on('connect', handleConnect);
     socket.on('game_state_update', handleGameUpdate);
     socket.on('lobby_update', handleLobbyUpdate);
     socket.on('room_error', handleRoomError);
     socket.on('game_ended_by_host', handleHostEnded);
-    socket.on('game_stalled', handleGameStalled);
     document.addEventListener('visibilitychange', handleVisibility);
 
     if (socket.connected) handleConnect();
@@ -149,7 +146,6 @@ function App() {
       socket.off('lobby_update', handleLobbyUpdate);
       socket.off('room_error', handleRoomError);
       socket.off('game_ended_by_host', handleHostEnded);
-      socket.off('game_stalled', handleGameStalled);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
@@ -224,7 +220,7 @@ function App() {
   const switchPulse = mySeats.length === 2 && !!inactiveSeatId &&
     hasPending(inactiveSeatId, gameState, lobbyState);
 
-  const clearRoom = () => { setStallInfo(null); setLeaveDialog(null); setRoomCode(null); setLobbyState(null); setGameState(null); setMySeats([]); setActiveSeatIdx(0); clearSession(); };
+  const clearRoom = () => { setLeaveDialog(null); setRoomCode(null); setLobbyState(null); setGameState(null); setMySeats([]); setActiveSeatIdx(0); clearSession(); };
 
   const handleLeaveClick = () => {
     if (inGame) {
@@ -237,7 +233,7 @@ function App() {
       } else {
         setLeaveDialog({
           title: 'Leave game?',
-          body: 'This will stall the game for all other players. They will need to restart from the Load Game menu using the ⚡ Autosave slot.',
+          body: 'Your seat will be held. You can rejoin from the Join tab.',
           confirmLabel: 'Leave',
           confirmBg: '#7a1a1a',
           onConfirm: () => socket.emit('player_leave', clearRoom),
@@ -301,15 +297,6 @@ function App() {
       </div>
       {leaveDialog && <ConfirmDialog title={leaveDialog.title} body={leaveDialog.body} confirmLabel={leaveDialog.confirmLabel} confirmBg={leaveDialog.confirmBg} onConfirm={leaveDialog.onConfirm} onCancel={() => setLeaveDialog(null)} />}
 
-      {stallInfo && (
-        <div style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
-          <div style={{maxWidth:360,width:'100%',background:'linear-gradient(160deg,rgba(30,18,10,0.98) 0%,rgba(10,5,0,0.99) 100%)',border:'1px solid rgba(240,192,64,0.25)',borderRadius:16,padding:'28px 24px',textAlign:'center',boxShadow:'0 8px 40px rgba(0,0,0,0.7)'}}>
-            <p style={{color:'#f0c040',fontWeight:800,fontSize:17,margin:'0 0 10px'}}>Game stalled — {stallInfo.leftBy} left</p>
-            <p style={{color:'rgba(255,255,255,0.5)',fontSize:13,margin:'0 0 22px',lineHeight:1.5}}>You can restart this game from the ⚡ Autosave slot in the Load Game menu.</p>
-            <button onClick={clearRoom} style={{width:'100%',padding:'11px 0',background:'#f0c040',color:'#1a0f0a',border:'none',borderRadius:10,fontWeight:800,fontSize:14,cursor:'pointer'}}>Return to Home</button>
-          </div>
-        </div>
-      )}
 
       {lobbyState.setupPhase !== 'in_game' ? (
         <SetupFlow lobbyState={lobbyState} activeSeatId={activeSeatId} onLeave={() => { socket.emit('leave_room'); clearRoom(); }} />

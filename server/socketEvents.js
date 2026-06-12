@@ -304,6 +304,8 @@ module.exports = function(io) {
                 return;
             }
 
+            if (actI !== undefined && actI !== null && gs.players[actI]?.disconnected && !isCeremony) return;
+
             const phaseBefore = gs.phase;
             processAction(gs, data);
 
@@ -541,6 +543,10 @@ module.exports = function(io) {
             callback({ games: roomManager.listActiveGames() });
         });
 
+        socket.on('list_in_progress_games', (callback) => {
+            callback({ games: roomManager.listInProgressGames() });
+        });
+
         socket.on('list_scoreboard', async (callback) => {
             try {
                 const entries = await scoreboardManager.listEntries();
@@ -756,29 +762,12 @@ module.exports = function(io) {
                 return;
             }
 
-            // Room already stalled — clean up this socket and re-broadcast stall
-            if (room.stalled) {
-                socket.leave(roomCode);
-                socket.currentRoom = null;
-                socket.emit('game_stalled', { leftBy: room.stalledBy });
-                if (callback) callback({ success: true });
-                return;
-            }
-
-            // Live game — stall the room
-            const seatIds = room.socketSeats?.[socket.id] || [socket.id];
-            const leaverNames = seatIds
-                .map(sid => gs ? gs.players.find(p => p.id === sid) : null)
-                .filter(Boolean)
-                .map(p => p.name);
-            const leftBy = leaverNames.length > 0 ? leaverNames.join(' & ') : 'A player';
-
-            room.stalled = true;
-            room.stalledBy = leftBy;
+            // Live game — mark seat as disconnected, held for rejoin
+            roomManager.markPlayerDisconnected(roomCode, socket.id);
             socket.leave(roomCode);
             socket.currentRoom = null;
             if (callback) callback({ success: true });
-            io.to(roomCode).emit('game_stalled', { leftBy });
+            io.to(roomCode).emit('game_state_update', gs);
         });
 
         socket.on('disconnect', () => {
@@ -859,6 +848,10 @@ module.exports = function(io) {
 
             const primaryPId = player.pId;
             remapId(player.id, socket.id);
+            const rejoinGp = gs?.players?.find(p => p.id === socket.id);
+            if (rejoinGp) rejoinGp.disconnected = false;
+            const rejoinRp = room.players.find(p => p.id === socket.id);
+            if (rejoinRp) rejoinRp.disconnected = false;
 
             // Find and remap secondary seat (dual-seat device)
             let secondaryPId = null;
@@ -869,6 +862,10 @@ module.exports = function(io) {
                 if (player2) {
                     secondaryPId = player2.pId;
                     remapId(player2.id, socket.id + '_2');
+                    const rejoinGp2 = gs?.players?.find(p => p.id === socket.id + '_2');
+                    if (rejoinGp2) rejoinGp2.disconnected = false;
+                    const rejoinRp2 = room.players.find(p => p.id === socket.id + '_2');
+                    if (rejoinRp2) rejoinRp2.disconnected = false;
                 }
             }
 
@@ -880,13 +877,6 @@ module.exports = function(io) {
             // Re-join the socket room (disconnect auto-leaves)
             socket.join(data.roomCode);
             socket.currentRoom = data.roomCode;
-
-            // Stalled room — send stall modal instead of normal game sync
-            if (room.stalled) {
-                socket.emit('game_stalled', { leftBy: room.stalledBy });
-                callback({ success: true, playerId: primaryPId, secondPlayerId: secondaryPId || undefined, inGame: room.setupPhase === 'in_game' });
-                return;
-            }
 
             // Sync state back — always send both so client knows where it is
             socket.emit('lobby_update', room);

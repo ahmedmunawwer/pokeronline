@@ -79,6 +79,7 @@ export default function Lobby({ onJoined }) {
     const [showJoinDropdown, setShowJoinDropdown] = useState(false);
     const nameReqRef = useRef(0);
     const [activeGames, setActiveGames] = useState([]);
+    const [inProgressGames, setInProgressGames] = useState([]);
     const [activeGameModal, setActiveGameModal] = useState(null);
     const [agName1, setAgName1] = useState('');
     const [agName2, setAgName2] = useState('');
@@ -181,13 +182,16 @@ export default function Lobby({ onJoined }) {
         else socket.once('connect', fetchJoin);
     }, [view]);
 
-    // Poll active loaded games while on join screen
+    // Poll active loaded games AND in-progress games while on join screen
     useEffect(() => {
         if (view !== 'join') return;
-        const poll = () => socket.emit('list_active_games', (res) => setActiveGames(res.games || []));
+        const poll = () => {
+            socket.emit('list_active_games', (res) => setActiveGames(res.games || []));
+            socket.emit('list_in_progress_games', (res) => setInProgressGames(res.games || []));
+        };
         poll();
         const id = setInterval(poll, 7000);
-        return () => { clearInterval(id); setActiveGames([]); };
+        return () => { clearInterval(id); setActiveGames([]); setInProgressGames([]); };
     }, [view]);
 
     // Auto-fill host code when entering host screen
@@ -296,6 +300,22 @@ export default function Lobby({ onJoined }) {
     const doAgJoin = () => {
         if (!agName1) return setAgJoinError('Select your name');
         if (agDualSeat && !agName2) return setAgJoinError("Select second player's name");
+
+        if (activeGameModal.type === 'in_progress') {
+            socket.emit('sync_reconnect', {
+                roomCode: activeGameModal.roomCode,
+                playerName: agName1,
+                secondName: agDualSeat ? agName2 : undefined
+            }, (res) => {
+                if (res.success) {
+                    onJoined(activeGameModal.roomCode, agName1, res.playerId, agDualSeat ? agName2 : undefined, res.secondPlayerId);
+                } else {
+                    setAgJoinError(res.reason || 'Could not rejoin');
+                }
+            });
+            return;
+        }
+
         socket.emit('join_loaded_game', {
             roomCode: activeGameModal.roomCode,
             name: agName1,
@@ -609,8 +629,28 @@ export default function Lobby({ onJoined }) {
                                     ))}
                                 </div>
                             )}
-                            {activeGames.length === 0 && (
-                                <div style={{color:DIM,fontSize:12,marginBottom:14}}>No active loaded games. Enter a code below to join.</div>
+                            {inProgressGames.length > 0 && (
+                                <div style={{marginBottom:16}}>
+                                    <div style={{color:'#64b5f6',fontWeight:700,fontSize:13,marginBottom:8}}>In Progress</div>
+                                    {inProgressGames.map(g => (
+                                        <div key={g.roomCode}
+                                            onMouseDown={() => { setActiveGameModal({...g, type:'in_progress'}); setAgName1(''); setAgName2(''); setAgDualSeat(false); setAgJoinError(''); }}
+                                            style={{background:'rgba(33,150,243,0.08)',border:'1px solid rgba(33,150,243,0.25)',borderRadius:10,padding:'10px 12px',marginBottom:8,cursor:'pointer',WebkitTapHighlightColor:'transparent'}}
+                                        >
+                                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
+                                                <span style={{color:'#fff',fontWeight:700,fontSize:15}}>{g.saveName || 'Live Game'}</span>
+                                                <span style={{color:DIM,fontSize:12}}>#{g.roomCode}</span>
+                                            </div>
+                                            <div style={{color:DIM,fontSize:12,marginBottom:4}}>
+                                                Session {g.sessionNumber}{g.totalSessions ? '/' + g.totalSessions : ''} · Hand #{g.handNumber}
+                                            </div>
+                                            <div style={{color:'rgba(100,181,246,0.7)',fontSize:11}}>Away: {g.disconnectedNames.join(', ')}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {activeGames.length === 0 && inProgressGames.length === 0 && (
+                                <div style={{color:DIM,fontSize:12,marginBottom:14}}>No active games. Enter a code below to join.</div>
                             )}
                             <Fld lbl="Room Code" val={joinCode} ch={handleCodeChange} type="number" />
                             <div style={{color:DIM,fontSize:11,marginTop:-8,marginBottom:10}}>1 digit = new game, 2 digits = loaded game</div>
@@ -1106,11 +1146,14 @@ export default function Lobby({ onJoined }) {
                     <div style={{background:'#1a0f0a',borderRadius:16,padding:24,width:'100%',maxWidth:420,maxHeight:'85vh',overflowY:'auto'}}>
                         <div style={{color:G,fontWeight:800,fontSize:20,marginBottom:4}}>{activeGameModal.saveName || 'Unnamed Save'}</div>
                         <div style={{color:DIM,fontSize:12,marginBottom:8}}>#{activeGameModal.roomCode}</div>
-                        <div style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:activeGameModal.filledNames.length ? 8 : 16}}>
+                        <div style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:8}}>
                             Session {activeGameModal.sessionNumber}{activeGameModal.totalSessions ? ' of ' + activeGameModal.totalSessions : ''} · Hand #{activeGameModal.handNumber}{phaseLabel(activeGameModal.phase) ? ' · ' + phaseLabel(activeGameModal.phase) : ''}
                         </div>
-                        {activeGameModal.filledNames.length > 0 && (
+                        {activeGameModal.type !== 'in_progress' && activeGameModal.filledNames?.length > 0 && (
                             <div style={{color:DIM,fontSize:12,marginBottom:16}}>Already joined: {activeGameModal.filledNames.join(', ')}</div>
+                        )}
+                        {activeGameModal.type === 'in_progress' && (
+                            <div style={{color:'rgba(100,181,246,0.7)',fontSize:12,marginBottom:16}}>Away: {activeGameModal.disconnectedNames.join(', ')}</div>
                         )}
                         {(() => {
                             const scored = (activeGameModal.playerNames || [])
@@ -1135,7 +1178,7 @@ export default function Lobby({ onJoined }) {
                             <select value={agName1} onChange={e => { const v = e.target.value; setAgName1(v); if (v === agName2) setAgName2(''); setAgJoinError(''); }}
                                 style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:agName1?'#fff':DIM,fontSize:14,boxSizing:'border-box',outline:'none',appearance:'none'}}>
                                 <option value="">Select your name</option>
-                                {activeGameModal.openNames.filter(n => n !== agName2).map(n => <option key={n} value={n}>{n}</option>)}
+                                {(activeGameModal.type === 'in_progress' ? activeGameModal.disconnectedNames : activeGameModal.openNames).filter(n => n !== agName2).map(n => <option key={n} value={n}>{n}</option>)}
                             </select>
                         </div>
                         <div style={{marginBottom: agDualSeat ? 10 : 16, marginTop:4}}>
@@ -1150,7 +1193,7 @@ export default function Lobby({ onJoined }) {
                                 <select value={agName2} onChange={e => { setAgName2(e.target.value); setAgJoinError(''); }}
                                     style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:agName2?'#fff':DIM,fontSize:14,boxSizing:'border-box',outline:'none',appearance:'none'}}>
                                     <option value="">Select second player's name</option>
-                                    {activeGameModal.openNames.filter(n => n !== agName1).map(n => <option key={n} value={n}>{n}</option>)}
+                                    {(activeGameModal.type === 'in_progress' ? activeGameModal.disconnectedNames : activeGameModal.openNames).filter(n => n !== agName1).map(n => <option key={n} value={n}>{n}</option>)}
                                 </select>
                             </div>
                         )}
