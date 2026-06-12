@@ -610,7 +610,17 @@ export default function Lobby({ onJoined }) {
                                     <div style={{color:G,fontWeight:700,fontSize:13,marginBottom:8}}>Active Games</div>
                                     {activeGames.map(g => (
                                         <div key={g.roomCode}
-                                            onMouseDown={() => { setActiveGameModal(g); setAgName1(''); setAgName2(''); setAgDualSeat(false); setAgJoinError(''); }}
+                                            onMouseDown={() => {
+                                if (!g.openNames.length) return;
+                                if (g.openNames.length === 1) {
+                                    socket.emit('join_loaded_game', { roomCode: g.roomCode, name: g.openNames[0] }, (res) => {
+                                        if (res.success) { onJoined(g.roomCode, g.openNames[0], res.playerId); }
+                                        else { setError(res.message || 'Could not join'); }
+                                    });
+                                } else {
+                                    setActiveGameModal(g); setAgName1(''); setAgName2(''); setAgDualSeat(false); setAgJoinError('');
+                                }
+                            }}
                                             style={{background:'rgba(240,192,64,0.08)',border:'1px solid rgba(240,192,64,0.25)',borderRadius:10,padding:'10px 12px',marginBottom:8,cursor:'pointer',WebkitTapHighlightColor:'transparent'}}
                                         >
                                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
@@ -634,7 +644,17 @@ export default function Lobby({ onJoined }) {
                                     <div style={{color:'#64b5f6',fontWeight:700,fontSize:13,marginBottom:8}}>In Progress</div>
                                     {inProgressGames.map(g => (
                                         <div key={g.roomCode}
-                                            onMouseDown={() => { setActiveGameModal({...g, type:'in_progress'}); setAgName1(''); setAgName2(''); setAgDualSeat(false); setAgJoinError(''); }}
+                                            onMouseDown={() => {
+                                if (!g.disconnectedNames.length) return;
+                                if (g.disconnectedNames.length === 1) {
+                                    socket.emit('sync_reconnect', { roomCode: g.roomCode, playerName: g.disconnectedNames[0] }, (res) => {
+                                        if (res.success) { onJoined(g.roomCode, g.disconnectedNames[0], res.playerId); }
+                                        else { setError(res.reason || 'Could not rejoin'); }
+                                    });
+                                } else {
+                                    setActiveGameModal({...g, type:'in_progress'}); setAgName1(''); setAgName2(''); setAgDualSeat(false); setAgJoinError('');
+                                }
+                            }}
                                             style={{background:'rgba(33,150,243,0.08)',border:'1px solid rgba(33,150,243,0.25)',borderRadius:10,padding:'10px 12px',marginBottom:8,cursor:'pointer',WebkitTapHighlightColor:'transparent'}}
                                         >
                                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
