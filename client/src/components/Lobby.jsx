@@ -2,8 +2,6 @@
 import socket from '../socket';
 import { Btn, Card, Fld, G, DIM, computeMedal, ScoreboardStatsView } from './UI';
 
-const PLAYER_POOL = ['Munz', 'Ray', 'Rizu', 'Rit', 'Manu', 'Ramez', 'Zanu', 'Sapu', 'Fahim'];
-
 function computeAllTimeStats(entries) {
     const map = {};
     for (const entry of entries) {
@@ -52,6 +50,38 @@ function computeAllTimeStats(entries) {
 }
 
 
+function NamePicker({ presets, value, excludeNames, onChange, onCustom, onEditPresets }) {
+    const available = presets.filter(
+        p => !excludeNames.some(e => e.toLowerCase() === p.name.toLowerCase())
+    );
+    return (
+        <div style={{maxHeight:200,overflowY:'auto',borderRadius:8,border:'1px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.03)'}}>
+            {available.map(p => (
+                <div key={p.id} onMouseDown={() => onChange(p.name)}
+                    style={{
+                        padding:'10px 12px',cursor:'pointer',fontSize:14,
+                        color: value.toLowerCase() === p.name.toLowerCase() ? '#f0c040' : '#fff',
+                        background: value.toLowerCase() === p.name.toLowerCase() ? 'rgba(240,192,64,0.12)' : '',
+                        fontWeight: value.toLowerCase() === p.name.toLowerCase() ? 700 : 400,
+                        borderBottom:'1px solid rgba(255,255,255,0.07)'
+                    }}
+                >{p.name}</div>
+            ))}
+            <div onMouseDown={onCustom}
+                style={{padding:'10px 12px',cursor:'pointer',fontSize:14,color:'#42a5f5',
+                        borderBottom: presets.length > 0 ? '1px solid rgba(255,255,255,0.07)' : 'none'}}>
+                ✏ Custom name...
+            </div>
+            {presets.length > 0 && (
+                <div onMouseDown={onEditPresets}
+                    style={{padding:'10px 12px',cursor:'pointer',fontSize:14,color:'#ffa726'}}>
+                    ⚙ Edit presets...
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function Lobby({ onJoined }) {
     const [view, setView] = useState("main"); // main, host, join, load, load_select
     
@@ -60,12 +90,10 @@ export default function Lobby({ onJoined }) {
     const [hostRoomCode, setHostRoomCode] = useState("");
     const [maxPlayers, setMaxPlayers] = useState("6");
     const [equalStack, setEqualStack] = useState(true);
-    const [showHostNameDropdown, setShowHostNameDropdown] = useState(false);
     const [dualSeat, setDualSeat] = useState(false);
     const [hostName2, setHostName2] = useState("");
     const [joinName2, setJoinName2] = useState("");
     const [loadHostName2, setLoadHostName2] = useState("");
-    const [showHostNameDropdown2, setShowHostNameDropdown2] = useState(false);
     const [showJoinDropdown2, setShowJoinDropdown2] = useState(false);
     const [showLoadDropdown2, setShowLoadDropdown2] = useState(false);
 
@@ -116,6 +144,17 @@ export default function Lobby({ onJoined }) {
     const [sbDetailTab, setSbDetailTab] = useState('overview');
     const [showAllTimeStats, setShowAllTimeStats] = useState(false);
     const [expandedAtPlayers, setExpandedAtPlayers] = useState(new Set());
+
+    // Preset state
+    const [presets, setPresets] = useState([]);
+    const [customTarget, setCustomTarget] = useState(null); // null | 'host1' | 'host2' | 'join1' | 'join2'
+    const [customName, setCustomName] = useState('');
+    const [customSave, setCustomSave] = useState(false);
+    const [customError, setCustomError] = useState('');
+    const [showEditPresets, setShowEditPresets] = useState(false);
+    const [editSelId, setEditSelId] = useState('');
+    const [editName, setEditName] = useState('');
+    const [editError, setEditError] = useState('');
 
     // Fetch latest room codes when entering host/join screens
     useEffect(() => {
@@ -483,6 +522,12 @@ export default function Lobby({ onJoined }) {
         socket.emit('list_scoreboard', (res) => setSbEntries(res.entries || []));
     }, [view]);
 
+    useEffect(() => {
+        socket.emit('list_presets', (res) => {
+            if (res.success) setPresets(res.presets);
+        });
+    }, []);
+
     const formatDate = (iso) => {
         try { 
             const d = new Date(iso);
@@ -490,24 +535,52 @@ export default function Lobby({ onJoined }) {
         } catch(e) { return iso; }
     };
 
-    const filteredHostPool = PLAYER_POOL.filter(n =>
-        n.toLowerCase().startsWith(hostName.toLowerCase()) &&
-        (!dualSeat || n.toLowerCase() !== hostName2.trim().toLowerCase())
-    );
-    const filteredHostPool2 = PLAYER_POOL.filter(n =>
-        n.toLowerCase().startsWith(hostName2.toLowerCase()) &&
-        n.toLowerCase() !== hostName.trim().toLowerCase()
-    );
-    const filteredJoinPool = PLAYER_POOL.filter(n =>
-        n.toLowerCase().startsWith(joinName.toLowerCase()) &&
-        !existingNames.some(e => e.toLowerCase() === n.toLowerCase()) &&
-        (!dualSeat || n.toLowerCase() !== joinName2.trim().toLowerCase())
-    );
-    const filteredJoinPool2 = PLAYER_POOL.filter(n =>
-        n.toLowerCase().startsWith(joinName2.toLowerCase()) &&
-        !existingNames.some(e => e.toLowerCase() === n.toLowerCase()) &&
-        n.toLowerCase() !== joinName.trim().toLowerCase()
-    );
+    const doCustomConfirm = () => {
+        const trimmed = customName.trim();
+        if (trimmed.length < 3 || trimmed.length > 9) return setCustomError('Name must be 3–9 characters');
+        if (customTarget === 'host1') setHostName(trimmed);
+        else if (customTarget === 'host2') setHostName2(trimmed);
+        else if (customTarget === 'join1') { setJoinName(trimmed); setNameError(''); }
+        else if (customTarget === 'join2') setJoinName2(trimmed);
+        if (customSave) {
+            socket.emit('add_preset', { name: trimmed }, (res) => {
+                if (res.success) {
+                    setPresets(prev => [...prev, { id: res.id, name: trimmed }].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())));
+                }
+            });
+        }
+        setCustomTarget(null);
+        setCustomName('');
+        setCustomSave(false);
+        setCustomError('');
+    };
+
+    const doRenamePreset = () => {
+        const trimmed = editName.trim();
+        if (trimmed.length < 3 || trimmed.length > 9) return setEditError('Name must be 3–9 characters');
+        socket.emit('rename_preset', { presetId: editSelId, newName: trimmed }, (res) => {
+            if (res.success) {
+                setPresets(prev => prev.map(p => p.id === editSelId ? { ...p, name: trimmed } : p).sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())));
+                setEditName(trimmed);
+                setEditError('');
+            } else {
+                setEditError(res.message || 'Rename failed');
+            }
+        });
+    };
+
+    const doDeletePreset = () => {
+        socket.emit('delete_preset', { presetId: editSelId }, (res) => {
+            if (res.success) {
+                setPresets(prev => prev.filter(p => p.id !== editSelId));
+                setEditSelId('');
+                setEditName('');
+                setEditError('');
+            } else {
+                setEditError(res.message || 'Delete failed');
+            }
+        });
+    };
 
     return (
         <div style={{minHeight:"100vh",background:"radial-gradient(circle at center, #3e2723 0%, #1a0f0a 100%)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -533,28 +606,15 @@ export default function Lobby({ onJoined }) {
                                 <button onClick={()=>setView("main")} style={{background:"none",border:"none",color:G,fontSize:22,cursor:"pointer",padding:0}}>←</button>
                                 <span style={{color:G,fontWeight:700,fontSize:15}}>Host Options</span>
                             </div>
-                            <div style={{marginBottom:14,position:'relative'}}>
+                            <div style={{marginBottom:14}}>
                                 <div style={{color:'rgba(255,255,255,0.5)',fontSize:12,marginBottom:5,fontWeight:600}}>Your Name</div>
-                                <input
-                                    value={hostName}
-                                    onChange={e => setHostName(e.target.value)}
-                                    onFocus={() => setShowHostNameDropdown(true)}
-                                    onBlur={() => setShowHostNameDropdown(false)}
-                                    placeholder="Your name"
-                                    style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:'#fff',fontSize:14,boxSizing:'border-box',outline:'none'}}
+                                <NamePicker
+                                    presets={presets} value={hostName}
+                                    excludeNames={dualSeat ? [hostName2] : []}
+                                    onChange={setHostName}
+                                    onCustom={() => { setCustomTarget('host1'); setCustomName(''); setCustomSave(false); setCustomError(''); }}
+                                    onEditPresets={() => { setShowEditPresets(true); setEditSelId(''); setEditName(''); setEditError(''); }}
                                 />
-                                {showHostNameDropdown && filteredHostPool.length > 0 && (
-                                    <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#2a1a0e',border:'1px solid rgba(240,192,64,0.3)',borderRadius:8,zIndex:10,overflow:'hidden',marginTop:2}}>
-                                        {filteredHostPool.map(n => (
-                                            <div key={n}
-                                                onMouseDown={(e) => { e.preventDefault(); setHostName(n); setShowHostNameDropdown(false); }}
-                                                onMouseEnter={e => e.currentTarget.style.background='rgba(240,192,64,0.12)'}
-                                                onMouseLeave={e => e.currentTarget.style.background=''}
-                                                style={{padding:'10px 12px',cursor:'pointer',fontSize:14,color:'#fff',borderBottom:'1px solid rgba(255,255,255,0.07)'}}
-                                            >{n}</div>
-                                        ))}
-                                    </div>
-                                )}
                             </div>
                             <div style={{marginBottom: dualSeat ? 10 : 14, marginTop:4}}>
                                 <label style={{color:DIM, fontSize:13, display:'flex', alignItems:'center', gap:8, cursor:'pointer', userSelect:'none'}}>
@@ -563,28 +623,15 @@ export default function Lobby({ onJoined }) {
                                 </label>
                             </div>
                             {dualSeat && (
-                                <div style={{marginBottom:14, position:'relative'}}>
+                                <div style={{marginBottom:14}}>
                                     <div style={{color:'rgba(255,255,255,0.5)', fontSize:12, marginBottom:5, fontWeight:600}}>Second Player's Name</div>
-                                    <input
-                                        value={hostName2}
-                                        onChange={e => setHostName2(e.target.value)}
-                                        onFocus={() => setShowHostNameDropdown2(true)}
-                                        onBlur={() => setShowHostNameDropdown2(false)}
-                                        placeholder="Second player"
-                                        style={{width:'100%', padding:'10px 12px', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, color:'#fff', fontSize:14, boxSizing:'border-box', outline:'none'}}
+                                    <NamePicker
+                                        presets={presets} value={hostName2}
+                                        excludeNames={[hostName]}
+                                        onChange={setHostName2}
+                                        onCustom={() => { setCustomTarget('host2'); setCustomName(''); setCustomSave(false); setCustomError(''); }}
+                                        onEditPresets={() => { setShowEditPresets(true); setEditSelId(''); setEditName(''); setEditError(''); }}
                                     />
-                                    {showHostNameDropdown2 && filteredHostPool2.length > 0 && (
-                                        <div style={{position:'absolute', top:'100%', left:0, right:0, background:'#2a1a0e', border:'1px solid rgba(240,192,64,0.3)', borderRadius:8, zIndex:10, overflow:'hidden', marginTop:2}}>
-                                            {filteredHostPool2.map(n => (
-                                                <div key={n}
-                                                    onMouseDown={e => { e.preventDefault(); setHostName2(n); setShowHostNameDropdown2(false); }}
-                                                    onMouseEnter={e => e.currentTarget.style.background='rgba(240,192,64,0.12)'}
-                                                    onMouseLeave={e => e.currentTarget.style.background=''}
-                                                    style={{padding:'10px 12px', cursor:'pointer', fontSize:14, color:'#fff', borderBottom:'1px solid rgba(255,255,255,0.07)'}}
-                                                >{n}</div>
-                                            ))}
-                                        </div>
-                                    )}
                                 </div>
                             )}
                             <Fld lbl="Room Code (1–9)" val={hostRoomCode} ch={e=>setHostRoomCode(e.target.value)} type="number" />
@@ -674,44 +721,42 @@ export default function Lobby({ onJoined }) {
                             )}
                             <Fld lbl="Room Code" val={joinCode} ch={handleCodeChange} type="number" />
                             <div style={{color:DIM,fontSize:11,marginTop:-8,marginBottom:10}}>1 digit = new game, 2 digits = loaded game</div>
-                            <div style={{marginBottom:14,position:'relative'}}>
-                                <div style={{color:'rgba(255,255,255,0.5)',fontSize:12,marginBottom:5,fontWeight:600}}>Your Name</div>
-                                <input
-                                    value={joinName}
-                                    onChange={handleJoinNameChange}
-                                    onFocus={() => {
-                                        if (joinCode.length === 1) setShowJoinDropdown(true);
-                                        else if (joinCode.length === 2 && expectedNames.length > 0) setShowJoinDropdown(true);
-                                    }}
-                                    onBlur={() => setShowJoinDropdown(false)}
-                                    placeholder={joinCode.length === 2 ? "Your original name" : "e.g. Alice"}
-                                    style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:'#fff',fontSize:14,boxSizing:'border-box',outline:'none'}}
-                                />
-                                {showJoinDropdown && joinCode.length === 1 && filteredJoinPool.length > 0 && (
-                                    <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#2a1a0e',border:'1px solid rgba(240,192,64,0.3)',borderRadius:8,zIndex:10,overflow:'hidden',marginTop:2}}>
-                                        {filteredJoinPool.map(n => (
-                                            <div key={n}
-                                                onMouseDown={(e) => { e.preventDefault(); setJoinName(n); setShowJoinDropdown(false); }}
-                                                onMouseEnter={e => e.currentTarget.style.background='rgba(240,192,64,0.12)'}
-                                                onMouseLeave={e => e.currentTarget.style.background=''}
-                                                style={{padding:'10px 12px',cursor:'pointer',fontSize:14,color:'#fff',borderBottom:'1px solid rgba(255,255,255,0.07)'}}
-                                            >{n}</div>
-                                        ))}
-                                    </div>
-                                )}
-                                {showJoinDropdown && joinCode.length === 2 && expectedNames.length > 0 && (
-                                    <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#2a1a0e',border:'1px solid rgba(240,192,64,0.3)',borderRadius:8,zIndex:10,overflow:'hidden',marginTop:2}}>
-                                        {expectedNames.map(n => (
-                                            <div key={n}
-                                                onMouseDown={(e) => { e.preventDefault(); setJoinName(n); setShowJoinDropdown(false); }}
-                                                onMouseEnter={e => e.currentTarget.style.background='rgba(240,192,64,0.12)'}
-                                                onMouseLeave={e => e.currentTarget.style.background=''}
-                                                style={{padding:'10px 12px',cursor:'pointer',fontSize:14,color:'#fff',borderBottom:'1px solid rgba(255,255,255,0.07)'}}
-                                            >{n}</div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                            {joinCode.length === 2 ? (
+                                <div style={{marginBottom:14,position:'relative'}}>
+                                    <div style={{color:'rgba(255,255,255,0.5)',fontSize:12,marginBottom:5,fontWeight:600}}>Your Name</div>
+                                    <input
+                                        value={joinName}
+                                        onChange={handleJoinNameChange}
+                                        onFocus={() => { if (expectedNames.length > 0) setShowJoinDropdown(true); }}
+                                        onBlur={() => setShowJoinDropdown(false)}
+                                        placeholder="Your original name"
+                                        style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:'#fff',fontSize:14,boxSizing:'border-box',outline:'none'}}
+                                    />
+                                    {showJoinDropdown && expectedNames.length > 0 && (
+                                        <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#2a1a0e',border:'1px solid rgba(240,192,64,0.3)',borderRadius:8,zIndex:10,overflow:'hidden',marginTop:2}}>
+                                            {expectedNames.map(n => (
+                                                <div key={n}
+                                                    onMouseDown={(e) => { e.preventDefault(); setJoinName(n); setShowJoinDropdown(false); }}
+                                                    onMouseEnter={e => e.currentTarget.style.background='rgba(240,192,64,0.12)'}
+                                                    onMouseLeave={e => e.currentTarget.style.background=''}
+                                                    style={{padding:'10px 12px',cursor:'pointer',fontSize:14,color:'#fff',borderBottom:'1px solid rgba(255,255,255,0.07)'}}
+                                                >{n}</div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div style={{marginBottom:14}}>
+                                    <div style={{color:'rgba(255,255,255,0.5)',fontSize:12,marginBottom:5,fontWeight:600}}>Your Name</div>
+                                    <NamePicker
+                                        presets={presets} value={joinName}
+                                        excludeNames={[...existingNames, ...(dualSeat ? [joinName2] : [])]}
+                                        onChange={n => { setJoinName(n); setNameError(''); }}
+                                        onCustom={() => { setCustomTarget('join1'); setCustomName(''); setCustomSave(false); setCustomError(''); }}
+                                        onEditPresets={() => { setShowEditPresets(true); setEditSelId(''); setEditName(''); setEditError(''); }}
+                                    />
+                                </div>
+                            )}
                             <div style={{marginBottom: dualSeat ? 10 : 0, marginTop:4}}>
                                 <label style={{color:DIM, fontSize:13, display:'flex', alignItems:'center', gap:8, cursor:'pointer', userSelect:'none'}}>
                                     <input type="checkbox" checked={dualSeat} onChange={e => { setDualSeat(e.target.checked); setJoinName2(''); }} style={{width:16, height:16, accentColor:'#f0c040'}} />
@@ -719,44 +764,42 @@ export default function Lobby({ onJoined }) {
                                 </label>
                             </div>
                             {dualSeat && (
-                                <div style={{marginBottom:14, position:'relative'}}>
-                                    <div style={{color:'rgba(255,255,255,0.5)', fontSize:12, marginBottom:5, fontWeight:600}}>Second Player's Name</div>
-                                    <input
-                                        value={joinName2}
-                                        onChange={e => setJoinName2(e.target.value)}
-                                        onFocus={() => {
-                                            if (joinCode.length === 1) setShowJoinDropdown2(true);
-                                            else if (joinCode.length === 2 && expectedNames.length > 0) setShowJoinDropdown2(true);
-                                        }}
-                                        onBlur={() => setShowJoinDropdown2(false)}
-                                        placeholder={joinCode.length === 2 ? "Their original name" : "Second player"}
-                                        style={{width:'100%', padding:'10px 12px', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, color:'#fff', fontSize:14, boxSizing:'border-box', outline:'none'}}
-                                    />
-                                    {showJoinDropdown2 && joinCode.length === 1 && filteredJoinPool2.length > 0 && (
-                                        <div style={{position:'absolute', top:'100%', left:0, right:0, background:'#2a1a0e', border:'1px solid rgba(240,192,64,0.3)', borderRadius:8, zIndex:10, overflow:'hidden', marginTop:2}}>
-                                            {filteredJoinPool2.map(n => (
-                                                <div key={n}
-                                                    onMouseDown={e => { e.preventDefault(); setJoinName2(n); setShowJoinDropdown2(false); }}
-                                                    onMouseEnter={e => e.currentTarget.style.background='rgba(240,192,64,0.12)'}
-                                                    onMouseLeave={e => e.currentTarget.style.background=''}
-                                                    style={{padding:'10px 12px', cursor:'pointer', fontSize:14, color:'#fff', borderBottom:'1px solid rgba(255,255,255,0.07)'}}
-                                                >{n}</div>
-                                            ))}
-                                        </div>
-                                    )}
-                                    {showJoinDropdown2 && joinCode.length === 2 && expectedNames.length > 0 && (
-                                        <div style={{position:'absolute', top:'100%', left:0, right:0, background:'#2a1a0e', border:'1px solid rgba(240,192,64,0.3)', borderRadius:8, zIndex:10, overflow:'hidden', marginTop:2}}>
-                                            {expectedNames.filter(n => n.toLowerCase() !== joinName.trim().toLowerCase()).map(n => (
-                                                <div key={n}
-                                                    onMouseDown={e => { e.preventDefault(); setJoinName2(n); setShowJoinDropdown2(false); }}
-                                                    onMouseEnter={e => e.currentTarget.style.background='rgba(240,192,64,0.12)'}
-                                                    onMouseLeave={e => e.currentTarget.style.background=''}
-                                                    style={{padding:'10px 12px', cursor:'pointer', fontSize:14, color:'#fff', borderBottom:'1px solid rgba(255,255,255,0.07)'}}
-                                                >{n}</div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
+                                joinCode.length === 2 ? (
+                                    <div style={{marginBottom:14, position:'relative'}}>
+                                        <div style={{color:'rgba(255,255,255,0.5)', fontSize:12, marginBottom:5, fontWeight:600}}>Second Player's Name</div>
+                                        <input
+                                            value={joinName2}
+                                            onChange={e => setJoinName2(e.target.value)}
+                                            onFocus={() => { if (expectedNames.length > 0) setShowJoinDropdown2(true); }}
+                                            onBlur={() => setShowJoinDropdown2(false)}
+                                            placeholder="Their original name"
+                                            style={{width:'100%', padding:'10px 12px', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, color:'#fff', fontSize:14, boxSizing:'border-box', outline:'none'}}
+                                        />
+                                        {showJoinDropdown2 && expectedNames.length > 0 && (
+                                            <div style={{position:'absolute', top:'100%', left:0, right:0, background:'#2a1a0e', border:'1px solid rgba(240,192,64,0.3)', borderRadius:8, zIndex:10, overflow:'hidden', marginTop:2}}>
+                                                {expectedNames.filter(n => n.toLowerCase() !== joinName.trim().toLowerCase()).map(n => (
+                                                    <div key={n}
+                                                        onMouseDown={e => { e.preventDefault(); setJoinName2(n); setShowJoinDropdown2(false); }}
+                                                        onMouseEnter={e => e.currentTarget.style.background='rgba(240,192,64,0.12)'}
+                                                        onMouseLeave={e => e.currentTarget.style.background=''}
+                                                        style={{padding:'10px 12px', cursor:'pointer', fontSize:14, color:'#fff', borderBottom:'1px solid rgba(255,255,255,0.07)'}}
+                                                    >{n}</div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div style={{marginBottom:14}}>
+                                        <div style={{color:'rgba(255,255,255,0.5)', fontSize:12, marginBottom:5, fontWeight:600}}>Second Player's Name</div>
+                                        <NamePicker
+                                            presets={presets} value={joinName2}
+                                            excludeNames={[...existingNames, joinName]}
+                                            onChange={setJoinName2}
+                                            onCustom={() => { setCustomTarget('join2'); setCustomName(''); setCustomSave(false); setCustomError(''); }}
+                                            onEditPresets={() => { setShowEditPresets(true); setEditSelId(''); setEditName(''); setEditError(''); }}
+                                        />
+                                    </div>
+                                )
                             )}
                             {nameError && <div style={{color:"#ff6b6b",fontSize:12,marginTop:-8,marginBottom:10,paddingLeft:2}}>{nameError}</div>}
                             <Btn full dis={!!nameError} onClick={doJoin}>Connect to Table</Btn>
@@ -1388,6 +1431,66 @@ export default function Lobby({ onJoined }) {
                     </div>
                 );
             })()}
+            {customTarget && (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:20}}>
+                    <div style={{background:'#2a1a0e',border:'1px solid rgba(240,192,64,0.3)',borderRadius:12,padding:20,width:'min(340px,90vw)'}}>
+                        <div style={{color:G,fontWeight:700,fontSize:16,marginBottom:14}}>Custom Name</div>
+                        <input
+                            value={customName}
+                            onChange={e => { setCustomName(e.target.value); setCustomError(''); }}
+                            placeholder="3–9 characters"
+                            maxLength={9}
+                            autoFocus
+                            style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:'#fff',fontSize:14,boxSizing:'border-box',outline:'none',marginBottom:10}}
+                        />
+                        <label style={{display:'flex',alignItems:'center',gap:8,color:DIM,fontSize:13,marginBottom:14,cursor:'pointer'}}>
+                            <input type="checkbox" checked={customSave} onChange={e => setCustomSave(e.target.checked)} style={{width:16,height:16,accentColor:'#f0c040'}} />
+                            Save as preset
+                        </label>
+                        {customError && <div style={{color:'#ff6b6b',fontSize:12,marginBottom:10}}>{customError}</div>}
+                        <div style={{display:'flex',gap:10}}>
+                            <Btn full bg="#555" onClick={() => setCustomTarget(null)}>Cancel</Btn>
+                            <Btn full onClick={doCustomConfirm}>Confirm</Btn>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {showEditPresets && (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:20}}>
+                    <div style={{background:'#2a1a0e',border:'1px solid rgba(240,192,64,0.3)',borderRadius:12,padding:20,width:'min(340px,90vw)'}}>
+                        <div style={{color:G,fontWeight:700,fontSize:16,marginBottom:14}}>Edit Presets</div>
+                        <select
+                            value={editSelId}
+                            onChange={e => { const id = e.target.value; setEditSelId(id); setEditName(presets.find(p => p.id === id)?.name || ''); setEditError(''); }}
+                            style={{width:'100%',padding:'10px 12px',background:'#1a0f0a',border:'1px solid rgba(255,255,255,0.2)',borderRadius:8,color:'#fff',fontSize:14,boxSizing:'border-box',marginBottom:12}}
+                        >
+                            <option value="">— Select preset —</option>
+                            {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                        {editSelId && (
+                            <>
+                                <input
+                                    value={editName}
+                                    onChange={e => { setEditName(e.target.value); setEditError(''); }}
+                                    placeholder="New name (3–9 chars)"
+                                    maxLength={9}
+                                    style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:'#fff',fontSize:14,boxSizing:'border-box',outline:'none',marginBottom:10}}
+                                />
+                                {editError && <div style={{color:'#ff6b6b',fontSize:12,marginBottom:10}}>{editError}</div>}
+                                <div style={{marginBottom:8}}><Btn full onClick={doRenamePreset}>Confirm Rename</Btn></div>
+                                <button
+                                    onMouseDown={doDeletePreset}
+                                    style={{width:'100%',padding:'10px',background:'rgba(239,83,80,0.15)',border:'1px solid rgba(239,83,80,0.4)',borderRadius:8,color:'#ef5350',fontSize:14,cursor:'pointer'}}
+                                >🗑 Delete</button>
+                            </>
+                        )}
+                        <button
+                            onMouseDown={() => setShowEditPresets(false)}
+                            style={{width:'100%',marginTop:12,padding:'10px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:DIM,fontSize:14,cursor:'pointer'}}
+                        >Close</button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

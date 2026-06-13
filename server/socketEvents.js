@@ -1,6 +1,7 @@
 const roomManager = require('./roomManager');
 const saveManager = require('./saveManager');
 const scoreboardManager = require('./scoreboardManager');
+const presetManager = require('./presetManager');
 
 const AUTOSAVE_PHASES = new Set(['preflop_start', 'flop_reveal', 'turn_reveal', 'river_reveal', 'end', 'session_end']);
 
@@ -61,6 +62,8 @@ function rejectIfStalled(socket, room, callback) {
 }
 
 module.exports = function(io) {
+    presetManager.seedDefaults().catch(e => console.error('presetManager seed:', e));
+
     io.on('connection', (socket) => {
         
         socket.on('host_game', (data, callback) => {
@@ -902,6 +905,42 @@ module.exports = function(io) {
             socket.emit('lobby_update', room);
             if (gs) socket.emit('game_state_update', gs);
             callback({ success: true, playerId: primaryPId, secondPlayerId: secondaryPId || undefined, inGame: room.setupPhase === 'in_game' });
+        });
+
+        socket.on('list_presets', async (callback) => {
+            try {
+                const presets = await presetManager.listPresets();
+                if (callback) callback({ success: true, presets });
+            } catch (e) {
+                if (callback) callback({ success: false, message: e.message });
+            }
+        });
+
+        socket.on('add_preset', async (data, callback) => {
+            try {
+                const id = await presetManager.addPreset(data?.name);
+                if (callback) callback({ success: true, id });
+            } catch (e) {
+                if (callback) callback({ success: false, message: e.message });
+            }
+        });
+
+        socket.on('rename_preset', async (data, callback) => {
+            try {
+                await presetManager.renamePreset(data?.presetId, data?.newName);
+                if (callback) callback({ success: true });
+            } catch (e) {
+                if (callback) callback({ success: false, message: e.message });
+            }
+        });
+
+        socket.on('delete_preset', async (data, callback) => {
+            try {
+                await presetManager.deletePreset(data?.presetId);
+                if (callback) callback({ success: true });
+            } catch (e) {
+                if (callback) callback({ success: false, message: e.message });
+            }
         });
     });
 };
