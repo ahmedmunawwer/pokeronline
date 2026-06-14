@@ -1,7 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const scoreboardManager = require('./scoreboardManager');
 
-const MAX_NAMED_SAVES = 7;
+const MAX_NAMED_SAVES = 30;
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
     console.error('[saveManager] WARNING: SUPABASE_URL or SUPABASE_SERVICE_KEY not set — saves will fail');
@@ -13,7 +13,7 @@ const supabase = createClient(
 );
 
 async function saveGame(gameState, roomPlayers, options = {}) {
-    const { name, overwriteSaveId } = options;
+    const { name, overwriteSaveId, hostName, isGameActive } = options;
     const saveId = Date.now().toString(36);
     const stateCopy = JSON.parse(JSON.stringify(gameState));
     delete stateCopy.confirmations;
@@ -21,6 +21,7 @@ async function saveGame(gameState, roomPlayers, options = {}) {
     const saveData = {
         saveId,
         name: name || null,
+        hostName: hostName || null,
         savedAt: new Date().toISOString(),
         playerNames: roomPlayers.map(p => p.name),
         playerCount: roomPlayers.length,
@@ -69,16 +70,17 @@ async function saveGame(gameState, roomPlayers, options = {}) {
         const { data: existing, error: listErr } = await supabase
             .from('saves')
             .select('id, updated_at')
-            .neq('id', 'autosave')
             .order('updated_at', { ascending: true });
 
         if (listErr) throw listErr;
 
         if (existing && existing.length >= MAX_NAMED_SAVES) {
+            const evict = existing.find(row => !isGameActive || !isGameActive(row.id));
+            if (!evict) throw new Error('Save cap reached: all saved games are currently active');
             const { error: delErr } = await supabase
                 .from('saves')
                 .delete()
-                .eq('id', existing[0].id);
+                .eq('id', evict.id);
             if (delErr) throw delErr;
         }
 
@@ -90,38 +92,14 @@ async function saveGame(gameState, roomPlayers, options = {}) {
         catch (sbErr) { console.warn('[scoreboard] writeEntry failed (non-fatal):', sbErr.message); }
     } catch (e) {
         if (e.message?.startsWith('DUPLICATE_NAME:')) throw e;
+        if (e.message?.startsWith('Save cap reached:')) throw e;
         console.error('[saveManager] saveGame failed:', e.message);
     }
 
     return overwriteSaveId || saveId;
 }
 
-async function saveAutosave(gameState, roomPlayers) {
-    const stateCopy = JSON.parse(JSON.stringify(gameState));
-    delete stateCopy.confirmations;
-
-    const saveData = {
-        saveId: 'autosave',
-        savedAt: new Date().toISOString(),
-        playerNames: roomPlayers.map(p => p.name),
-        playerCount: roomPlayers.length,
-        gameState: stateCopy,
-        handNumber: gameState.hn,
-        sessionNumber: gameState.sn,
-        linkedSaveId: gameState.loadedFromSaveId || null
-    };
-
-    try {
-        const { error } = await supabase
-            .from('saves')
-            .upsert({ id: 'autosave', data: saveData }, { onConflict: 'id' });
-        if (error) throw error;
-    } catch (e) {
-        console.error('[autosave] write failed:', e.message);
-    }
-}
-
-async function listSaves() {
+async function listGames() {
     try {
         const { data, error } = await supabase
             .from('saves')
@@ -130,36 +108,31 @@ async function listSaves() {
 
         if (error) throw error;
 
-        const items = (data || []).map(row => ({
-            saveId: row.id,
-            name: row.data.name || ('Save ' + (row.id || '').toUpperCase()),
-            savedAt: row.data.savedAt,
-            playerNames: row.data.playerNames,
-            playerCount: row.data.playerCount,
-            handNumber: row.data.handNumber,
-            sessionNumber: row.data.sessionNumber,
-            scores: row.data.gameState?.scores || {},
-            stacks: (row.data.gameState?.players || []).map(p => ({ id: p.id, name: p.name, stack: p.stack })),
-            cfg: row.data.gameState?.cfg || null,
-            phase: row.data.gameState?.phase || null,
-            linkedSaveId: row.data.linkedSaveId || null,
-        }));
+        const items = (data || []).map(row => {
+            const d = row.data;
+            const sn = d.gameState?.sn ?? d.sessionNumber ?? 0;
+            const totalSessions = d.gameState?.cfg?.sessions ?? null;
+            const completionStatus = totalSessions && sn > totalSessions ? 'completed' : 'in_progress';
+            return {
+                saveId: row.id,
+                name: d.name || ('Save ' + (row.id || '').toUpperCase()),
+                hostName: d.hostName || null,
+                savedAt: d.savedAt,
+                playerNames: d.playerNames,
+                playerCount: d.playerCount,
+                handNumber: d.handNumber,
+                sessionNumber: d.sessionNumber,
+                scores: d.gameState?.scores || {},
+                stacks: (d.gameState?.players || []).map(p => ({ id: p.id, name: p.name, stack: p.stack })),
+                cfg: d.gameState?.cfg || null,
+                phase: d.gameState?.phase || null,
+                completionStatus,
+            };
+        });
 
-        const autosave = items.find(s => s.saveId === 'autosave');
-        if (autosave?.linkedSaveId) {
-            const linked = items.find(s => s.saveId === autosave.linkedSaveId);
-            autosave.linkedName = linked?.name || null;
-            autosave.synced = linked
-                ? autosave.handNumber === linked.handNumber
-                    && autosave.sessionNumber === linked.sessionNumber
-                    && autosave.phase === linked.phase
-                : false;
-        }
-
-        const named = items.filter(s => s.saveId !== 'autosave');
-        return autosave ? [autosave, ...named] : named;
+        return items.filter(s => s.completionStatus === 'in_progress');
     } catch (e) {
-        console.error('[saveManager] listSaves failed:', e.message);
+        console.error('[saveManager] listGames failed:', e.message);
         return [];
     }
 }
@@ -190,25 +163,6 @@ async function renameSave(saveId, newName) {
 }
 
 async function deleteSave(saveId) {
-    if (saveId === 'autosave') throw new Error('Cannot delete autosave');
-
-    try {
-        const { data: autosaveRow } = await supabase
-            .from('saves')
-            .select('data')
-            .eq('id', 'autosave')
-            .single();
-        if (autosaveRow?.data?.linkedSaveId === saveId) {
-            const updatedData = { ...autosaveRow.data, linkedSaveId: null };
-            await supabase
-                .from('saves')
-                .update({ data: updatedData })
-                .eq('id', 'autosave');
-        }
-    } catch (e) {
-        console.error('[deleteSave] linkedSaveId cleanup failed (non-fatal):', e.message);
-    }
-
     const { error } = await supabase
         .from('saves')
         .delete()
@@ -216,89 +170,6 @@ async function deleteSave(saveId) {
     if (error) throw error;
     try { await scoreboardManager.markTerminated(saveId); }
     catch (sbErr) { console.warn('[scoreboard] markTerminated failed (non-fatal):', sbErr.message); }
-}
-
-async function promoteAutosave(name) {
-    const { data: nameHit } = await supabase
-        .from('saves')
-        .select('id')
-        .filter('data->>name', 'eq', name);
-    if (nameHit?.length) throw new Error('DUPLICATE_NAME:' + name);
-
-    const autosaveData = await loadSave('autosave');
-    if (!autosaveData) throw new Error('No autosave found');
-
-    const { data: existing, error: listErr } = await supabase
-        .from('saves')
-        .select('id, updated_at')
-        .neq('id', 'autosave')
-        .order('updated_at', { ascending: true });
-    if (listErr) throw listErr;
-
-    if (existing && existing.length >= MAX_NAMED_SAVES) {
-        const { error: delErr } = await supabase
-            .from('saves')
-            .delete()
-            .eq('id', existing[0].id);
-        if (delErr) throw delErr;
-    }
-
-    const saveId = Date.now().toString(36);
-    const saveData = { ...autosaveData, saveId, name, savedAt: new Date().toISOString() };
-    delete saveData.linkedSaveId;
-    const { error: insErr } = await supabase
-        .from('saves')
-        .insert({ id: saveId, data: saveData });
-    if (insErr) throw insErr;
-    try { await scoreboardManager.writeEntry(saveId, saveData.gameState, name); }
-    catch (sbErr) { console.warn('[scoreboard] writeEntry failed (non-fatal):', sbErr.message); }
-
-    const { data: autosaveRow, error: fetchErr } = await supabase
-        .from('saves')
-        .select('data')
-        .eq('id', 'autosave')
-        .single();
-    if (fetchErr) throw fetchErr;
-    const { error: linkErr } = await supabase
-        .from('saves')
-        .update({ data: { ...autosaveRow.data, linkedSaveId: saveId } })
-        .eq('id', 'autosave');
-    if (linkErr) throw linkErr;
-
-    return saveId;
-}
-
-async function syncAutosaveWithLinked() {
-    const { data: autosaveRow, error: fetchErr } = await supabase
-        .from('saves')
-        .select('data')
-        .eq('id', 'autosave')
-        .single();
-    if (fetchErr || !autosaveRow) throw new Error('No autosave found');
-
-    const linkedId = autosaveRow.data.linkedSaveId;
-    if (!linkedId) throw new Error('Autosave has no linked save');
-
-    const { data: linkedRow, error: linkedErr } = await supabase
-        .from('saves')
-        .select('data')
-        .eq('id', linkedId)
-        .single();
-    if (linkedErr || !linkedRow) throw new Error('Linked save not found');
-
-    const mergedData = {
-        ...autosaveRow.data,
-        saveId: linkedId,
-        name: linkedRow.data.name
-    };
-    delete mergedData.linkedSaveId;
-    const { error: updErr } = await supabase
-        .from('saves')
-        .update({ data: mergedData })
-        .eq('id', linkedId);
-    if (updErr) throw updErr;
-    try { await scoreboardManager.writeEntry(linkedId, mergedData.gameState, mergedData.name); }
-    catch (sbErr) { console.warn('[scoreboard] writeEntry failed (non-fatal):', sbErr.message); }
 }
 
 async function loadSave(saveId) {
@@ -310,7 +181,7 @@ async function loadSave(saveId) {
             .single();
 
         if (error) {
-            if (error.code === 'PGRST116') return null; // row not found
+            if (error.code === 'PGRST116') return null;
             throw error;
         }
 
@@ -321,7 +192,6 @@ async function loadSave(saveId) {
     }
 }
 
-// Remap old socket IDs to new ones when resuming a loaded game
 function remapPlayerIds(gameState, nameToNewId) {
     const idMap = {};
     gameState.players.forEach(p => {
@@ -330,30 +200,25 @@ function remapPlayerIds(gameState, nameToNewId) {
         }
     });
 
-    // Remap players
     gameState.players = gameState.players.map(p => ({
         ...p,
         id: idMap[p.id] || p.id
     }));
 
-    // Remap hc
     const newHc = {};
     Object.entries(gameState.hc || {}).forEach(([id, val]) => {
         newHc[idMap[id] || id] = val;
     });
     gameState.hc = newHc;
 
-    // Remap ai
     gameState.ai = (gameState.ai || []).map(id => idMap[id] || id);
 
-    // Remap scores
     const newScores = {};
     Object.entries(gameState.scores || {}).forEach(([id, val]) => {
         newScores[idMap[id] || id] = val;
     });
     gameState.scores = newScores;
 
-    // Remap origSt
     if (gameState.origSt) {
         const newOrigSt = {};
         Object.entries(gameState.origSt).forEach(([id, val]) => {
@@ -362,12 +227,8 @@ function remapPlayerIds(gameState, nameToNewId) {
         gameState.origSt = newOrigSt;
     }
 
-    // Remap rBets (index-based keys, no change needed)
-
-    // Reset confirmations
     gameState.confirmations = [];
 
-    // Remap history acts
     if (gameState.history) {
         gameState.history = gameState.history.map(h => ({
             ...h,
@@ -378,7 +239,6 @@ function remapPlayerIds(gameState, nameToNewId) {
         }));
     }
 
-    // Remap cp eligible
     if (gameState.cp) {
         gameState.cp = gameState.cp.map(pot => ({
             ...pot,
@@ -389,7 +249,6 @@ function remapPlayerIds(gameState, nameToNewId) {
         }));
     }
 
-    // Remap sessionHistory scores
     if (gameState.sessionHistory) {
         gameState.sessionHistory = gameState.sessionHistory.map(entry => ({
             ...entry,
@@ -399,10 +258,19 @@ function remapPlayerIds(gameState, nameToNewId) {
         }));
     }
 
-    // Remap potAward eligibleIds
     if (gameState.potAward && gameState.potAward.eligibleIds) {
         gameState.potAward.eligibleIds = gameState.potAward.eligibleIds.map(id => idMap[id] || id);
     }
 }
 
-module.exports = { saveGame, saveAutosave, listSaves, loadSave, renameSave, deleteSave, promoteAutosave, syncAutosaveWithLinked, remapPlayerIds };
+async function checkNameAvailable(name) {
+    try {
+        const { data } = await supabase.from('saves').select('id').filter('data->>name', 'eq', name).limit(1);
+        return !data?.length;
+    } catch (e) {
+        console.error('[saveManager] checkNameAvailable failed:', e.message);
+        return true;
+    }
+}
+
+module.exports = { saveGame, listGames, loadSave, renameSave, deleteSave, remapPlayerIds, checkNameAvailable };

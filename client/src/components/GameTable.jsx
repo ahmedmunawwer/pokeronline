@@ -32,7 +32,7 @@ const TONE_STYLES = {
 };
 
 export default function GameTable({ gameState, emitAction, socket, myId, isHost, onLeave, appPlayerName, appRoomCode, activeSeatIdx }) {
-    const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, sessionHistory, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver, skipPreflop, handsThisSession, loadedFromSaveId } = gameState;
+    const { phase, players, cfg, pot, cp, dealer, queue, hc, ai, rBets, curBet, lr, lfb, scores, history, sessionHistory, undoStack, pi, wi, hn, sn, ba, cpd: backendCpd, log, confirmations, potAward, restartApprovals, restartHostConfirming, restartCountdown, lastLeaver, skipPreflop, handsThisSession } = gameState;
 
     const [rm, setRm] = useState(false);
     const [ra, setRa] = useState("");
@@ -48,9 +48,6 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
     const [showHandRank, setShowHandRank] = useState(false);
     const [showHandHistory, setShowHandHistory] = useState(false);
     const [showCumulative, setShowCumulative] = useState(false);
-    const [showSaveModal, setShowSaveModal] = useState(false);
-    const [saveNameInput, setSaveNameInput] = useState('');
-    const [saveNameError, setSaveNameError] = useState('');
     const [confirmingAllIn, setConfirmingAllIn] = useState(false);
     const [showPotModal, setShowPotModal] = useState(false);
 
@@ -226,37 +223,6 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
 
     const pg = { minHeight:"100vh", background:"radial-gradient(circle at center, #3e2723 0%, #1a0f0a 100%)", color:"#fff", padding:"6px 14px 14px", fontFamily:"'Segoe UI',sans-serif", boxSizing:"border-box" };
 
-    const handleSaveClick = () => {
-        if (loadedFromSaveId) {
-            socket.emit('save_game', { overwriteSaveId: loadedFromSaveId }, (res) => {
-                if (res.success) {
-                    alert('Saved.');
-                } else {
-                    alert('Save failed: ' + res.message);
-                }
-            });
-        } else {
-            setSaveNameInput('');
-            setSaveNameError('');
-            setShowSaveModal(true);
-        }
-    };
-
-    const doNamedSave = () => {
-        const trimmed = saveNameInput.trim();
-        if (!trimmed) return setSaveNameError('Please enter a name');
-        socket.emit('save_game', { name: trimmed }, (res) => {
-            if (res.success) {
-                setShowSaveModal(false);
-            } else {
-                const msg = res.message?.startsWith('DUPLICATE_NAME:')
-                    ? `A save named '${trimmed}' already exists. Choose a different name.`
-                    : (res.message || 'Save failed');
-                setSaveNameError(msg);
-            }
-        });
-    };
-
     return (
         <div style={pg}>
             <div className="gt-shell">
@@ -271,27 +237,11 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                 {sseld && <SSDlg d={sseld} sel={ssel} setSel={setSsel} onClose={()=>{setSseld(null);setSsel([]);}} onSplit={(e,a,l)=>{const names=e.map(x=>x.name).join(" & ");setSseld(null);setSsel([]);setCdlg({type:"split",eligible:e,amt:a,label:l,names});}}/>}
 
                 {showUndoDlg && <ConfirmDialog title="Undo last action?" body="This will roll back the most recent move. All players will see the change." confirmLabel="Yes, undo" confirmBg="#b8680e" onConfirm={()=>{ setShowUndoDlg(false); handleUndo(); }} onCancel={()=>setShowUndoDlg(false)} />}
-                {showSaveModal && (
-                    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
-                        <div style={{background:'#1a0f0a',borderRadius:16,padding:24,width:'100%',maxWidth:360}}>
-                            <div style={{color:G,fontWeight:700,fontSize:16,marginBottom:16}}>Name this save</div>
-                            <input value={saveNameInput} onChange={e=>{setSaveNameInput(e.target.value);setSaveNameError('');}}
-                                placeholder="Save name"
-                                style={{width:'100%',padding:'10px 12px',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,color:'#fff',fontSize:14,boxSizing:'border-box',outline:'none',marginBottom:8}}
-                            />
-                            {saveNameError && <div style={{color:'#ff6b6b',fontSize:12,marginBottom:8}}>{saveNameError}</div>}
-                            <div style={{display:'flex',gap:10,marginTop:4}}>
-                                <Btn full bg="rgba(255,255,255,0.08)" onClick={()=>setShowSaveModal(false)}>Cancel</Btn>
-                                <Btn full onClick={doNamedSave}>💾 Save</Btn>
-                            </div>
-                        </div>
-                    </div>
-                )}
 
                 {/* ── Header ──────────────────────────────────────────────── */}
                 <div className="gt-header" style={{
                     display:'flex', justifyContent:'space-between', alignItems:'center',
-                    marginBottom:10, padding:'8px 12px',
+                    marginBottom:10, padding:'5px 10px',
                     background:'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)',
                     border:'1px solid rgba(255,255,255,0.06)',
                     borderRadius:14,
@@ -305,9 +255,6 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                         {appRoomCode && <span className="gt-app-info__room">{appRoomCode}</span>}
                     </div>
                     <div style={{display:'flex', alignItems:'baseline', gap:10, flex:1, minWidth:0, overflow:'hidden', whiteSpace:'nowrap'}}>
-                        <div style={{fontSize:16, fontWeight:900, color:G, letterSpacing:1.2, flexShrink:0}}>
-                            {PL[phase]||phase}
-                        </div>
                         <div style={{fontSize:10, color:DIM_STRONG, letterSpacing:1.2, fontWeight:700, textTransform:'uppercase', overflow:'hidden', textOverflow:'ellipsis'}}>
                             <span>Session {sn}/{cfg.sessions}</span>
                             <span style={{color:DIM, margin:'0 6px'}}>·</span>
@@ -318,7 +265,6 @@ export default function GameTable({ gameState, emitAction, socket, myId, isHost,
                     </div>
                     <div style={{display:'flex', gap:6, alignItems:'center', flexShrink:0}}>
                         {isHost && <button onClick={()=>setShowUndoDlg(true)} style={{background:'rgba(255,255,255,0.10)',border:'1px solid rgba(255,255,255,0.30)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>↩️</button>}
-                        {isHost && <button onClick={handleSaveClick} style={{background:'rgba(100,180,100,0.14)',border:'1px solid rgba(100,180,100,0.36)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>💾</button>}
                         {isHost && <button onClick={()=>socket.emit('set_skip_preflop', { enabled: !skipPreflop })} style={{background:skipPreflop?'rgba(240,192,64,0.25)':'rgba(255,255,255,0.10)',border:`1px solid ${skipPreflop?'rgba(240,192,64,0.6)':'rgba(255,255,255,0.30)'}`,borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>⏭</button>}
                         <button onClick={()=>setShowHandRank(true)} style={{background:'rgba(240,192,64,0.12)',border:'1px solid rgba(240,192,64,0.32)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>🃏</button>
                         <button onClick={()=>setShowHandHistory(true)} style={{background:'rgba(240,192,64,0.20)',border:'1px solid rgba(240,192,64,0.45)',borderRadius:'50%',width:30,height:30,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>📈</button>

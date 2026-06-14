@@ -260,24 +260,25 @@ function App() {
 
   return (
     <div className="app-shell" style={{minHeight:'100vh',background:'radial-gradient(circle at center, #3e2723 0%, #1a0f0a 100%)',color:'#fff',padding:'12px 14px',fontFamily:"'Segoe UI',sans-serif",boxSizing:'border-box'}}>
-      <div className="app-header-bar" style={{maxWidth:460,margin:'0 auto',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,background:'rgba(0,0,0,0.4)',padding:'10px 15px',borderRadius:12,border:'1px solid rgba(240,192,64,0.3)',position:'relative',zIndex:2000}}>
+      <div className="app-header-bar" style={{maxWidth:460,margin:'0 auto',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,background:'rgba(0,0,0,0.4)',padding:'6px 12px',borderRadius:12,border:'1px solid rgba(240,192,64,0.3)',position:'relative',zIndex:2000}}>
         <div style={{display:'flex',alignItems:'center',gap:14}}>
-          {myPlayer && mySeats.length < 2 && (
+          {(myPlayer && mySeats.length < 2) || mySeats.length === 2 ? (
             <div style={{display:'flex',alignItems:'center',gap:5}}>
-              <span style={{color:'rgba(255,255,255,0.35)',fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase'}}>YOU</span>
-              <span style={{color:'rgba(240,192,64,0.85)',fontSize:13,fontWeight:700}}>{myPlayer.name}</span>
+              <span style={{color:'rgba(240,192,64,0.85)',fontSize:13,fontWeight:700}}>
+                {mySeats.length === 2 ? mySeats[activeSeatIdx]?.name : myPlayer.name}
+              </span>
             </div>
-          )}
-          <div style={{width:1,height:16,background:'rgba(255,255,255,0.15)',display:(myPlayer && mySeats.length < 2)?'block':'none'}} />
+          ) : null}
+          <div style={{width:1,height:16,background:'rgba(255,255,255,0.15)',display:((myPlayer&&mySeats.length<2)||mySeats.length===2)?'block':'none'}} />
           <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <span style={{color:'rgba(255,255,255,0.6)',fontSize:13,fontWeight:700,letterSpacing:1,textTransform:'uppercase'}}>Room</span>
-            <span style={{color:'#f0c040',fontSize:22,fontWeight:900}}>{roomCode}</span>
+            <span style={{color:'#f0c040',fontSize:15,fontWeight:800,letterSpacing:0.3}}>
+              {gameState?.gameName || ('#' + roomCode)}
+            </span>
           </div>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           {mySeats.length === 2 && (
             <>
-              <span style={{color:'rgba(255,255,255,0.5)',fontSize:11,fontWeight:600,whiteSpace:'nowrap'}}>Acting: <span style={{color:'#f0c040'}}>{mySeats[activeSeatIdx]?.name}</span></span>
               <button
                 onClick={() => { const next = !autoSwitch; setAutoSwitch(next); sessionStorage.setItem('pokeronline_autoSwitch', next ? '1' : '0'); }}
                 style={{background:autoSwitch?'rgba(240,192,64,0.25)':'rgba(255,255,255,0.06)',border:`1px solid ${autoSwitch?'rgba(240,192,64,0.6)':'rgba(255,255,255,0.18)'}`,color:autoSwitch?'#f0c040':'rgba(255,255,255,0.35)',padding:'6px 8px',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer'}}

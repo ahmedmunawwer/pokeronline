@@ -278,7 +278,7 @@ function listActiveGames() {
         if (!openNames.length) continue;
         result.push({
             roomCode,
-            saveName: room.saveName || null,
+            saveName: room.gameName || room.saveName || null,
             totalSeats: room.expectedNames.length,
             filledNames,
             openNames,
@@ -305,7 +305,7 @@ function listInProgressGames() {
         if (!connectedPlayers.length) continue;
         result.push({
             roomCode,
-            saveName: room.saveName || null,
+            saveName: room.gameName || room.saveName || null,
             playerNames: players.map(p => ({ id: p.id, name: p.name })),
             disconnectedNames: disconnectedPlayers.map(p => p.name),
             sessionNumber: gs?.sn || null,
@@ -318,11 +318,22 @@ function listInProgressGames() {
     return result;
 }
 
+function isGameActive(saveId) {
+    for (const [, room] of activeRooms) {
+        if (room.gameState?.savedAsId !== saveId) continue;
+        if (!['waiting', 'loaded_waiting', 'in_game'].includes(room.setupPhase)) continue;
+        const hasConnectedPlayer = room.gameState?.players?.some(p => !p.inactive && !p.disconnected);
+        if (hasConnectedPlayer) return true;
+    }
+    return false;
+}
+
 module.exports = {
     createRoom,
     createLoadedRoom,
     listActiveGames,
     listInProgressGames,
+    isGameActive,
     joinRoom,
     joinLoadedRoom,
     setPlayerReady,

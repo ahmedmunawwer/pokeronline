@@ -3,7 +3,7 @@ const saveManager = require('./saveManager');
 const scoreboardManager = require('./scoreboardManager');
 const presetManager = require('./presetManager');
 
-const AUTOSAVE_PHASES = new Set(['preflop_start', 'flop_reveal', 'turn_reveal', 'river_reveal', 'end', 'session_end']);
+const CHECKPOINT_PHASES = new Set(['preflop_start', 'flop_reveal', 'turn_reveal', 'river_reveal', 'end', 'session_end']);
 
 const DEALER_CEREMONY_PHASES = new Set([
     'preflop_start', 'flop_reveal', 'turn_reveal', 'river_reveal',
@@ -66,8 +66,12 @@ module.exports = function(io) {
 
     io.on('connection', (socket) => {
         
-        socket.on('host_game', (data, callback) => {
+        socket.on('host_game', async (data, callback) => {
             try {
+                if (data.gameName?.trim()) {
+                    const available = await saveManager.checkNameAvailable(data.gameName.trim());
+                    if (!available) return callback({ success: false, message: `A game named "${data.gameName.trim()}" already exists. Choose a different name.` });
+                }
                 const roomCode = roomManager.createRoom(data.roomCode);
                 socket.join(roomCode);
                 socket.currentRoom = roomCode;
@@ -83,6 +87,9 @@ module.exports = function(io) {
                 }
 
                 const room = roomManager.getRoom(roomCode);
+                room.gameName = (data.gameName || '').trim();
+                room.gameState.gameName = room.gameName;
+                room.hostName = (data.name || '').trim();
                 const player = room.players.find(p => p.id === socket.id);
                 const player2 = data.secondName ? room.players.find(p => p.id === socket.id + '_2') : null;
                 callback({ success: true, roomCode, playerId: player ? player.pId : null, secondPlayerId: player2 ? player2.pId : undefined });
@@ -210,7 +217,7 @@ module.exports = function(io) {
             room.players.forEach(p => { oldIdToPId[p.id] = p.pId; });
 
             // 5 second countdown before actual game start
-            setTimeout(() => {
+            setTimeout(async () => {
                 const liveRoom = roomManager.getRoom(socket.currentRoom);
                 if (!liveRoom) return;
 
@@ -279,7 +286,17 @@ module.exports = function(io) {
                 startHand(liveRoom.gameState);
                 io.to(socket.currentRoom).emit('lobby_update', liveRoom);
                 io.to(socket.currentRoom).emit('game_state_update', liveRoom.gameState);
-                saveManager.saveAutosave(liveRoom.gameState, liveRoom.players);
+                try {
+                    const savedAsId = await saveManager.saveGame(
+                        liveRoom.gameState, liveRoom.players,
+                        { name: liveRoom.gameName, hostName: liveRoom.hostName, isGameActive: roomManager.isGameActive }
+                    );
+                    liveRoom.gameState.savedAsId = savedAsId;
+                    io.to(socket.currentRoom).emit('game_state_update', liveRoom.gameState);
+                } catch (e) {
+                    console.error('[start_countdown] initial save failed:', e.message);
+                    io.to(socket.currentRoom).emit('host_error', { message: e.message });
+                }
             }, 5000);
         });
 
@@ -360,8 +377,9 @@ module.exports = function(io) {
             }
 
             io.to(socket.currentRoom).emit('game_state_update', gs);
-            if (AUTOSAVE_PHASES.has(gs.phase)) {
-                saveManager.saveAutosave(gs, room.players);
+            if (gs.savedAsId && CHECKPOINT_PHASES.has(gs.phase)) {
+                saveManager.saveGame(gs, room.players, { overwriteSaveId: gs.savedAsId })
+                    .catch(e => console.error('[checkpoint] save failed:', e.message));
             }
         });
 
@@ -477,34 +495,6 @@ module.exports = function(io) {
         });
 
         // --- Save / Load ---
-        socket.on('save_game', async (data, callback) => {
-            if (typeof data === 'function') { callback = data; data = {}; }
-            if (!socket.currentRoom) return callback({ success: false, message: 'Not in a room' });
-            const room = roomManager.getRoom(socket.currentRoom);
-            if (rejectIfStalled(socket, room, callback)) return;
-            if (!room || room.hostId !== socket.id) return callback({ success: false, message: 'Only host can save' });
-            try {
-                const { name, overwriteSaveId } = data || {};
-                if (!overwriteSaveId && !name) return callback({ success: false, message: 'Please enter a name' });
-                const saveId = await saveManager.saveGame(room.gameState, room.players, { name, overwriteSaveId });
-                if (!overwriteSaveId) {
-                    room.gameState.loadedFromSaveId = saveId;
-                    io.to(socket.currentRoom).emit('game_state_update', room.gameState);
-                }
-                try {
-                    await saveManager.saveAutosave(room.gameState, room.players);
-                } catch (e) {
-                    console.warn('[save_game] autosave mirror failed (non-fatal):', e.message);
-                }
-                callback({ success: true, saveId });
-            } catch (e) {
-                if (e.message?.startsWith('DUPLICATE_NAME:')) {
-                    return callback({ success: false, message: e.message });
-                }
-                callback({ success: false, message: e.message });
-            }
-        });
-
         socket.on('rename_save', async (data, callback) => {
             try {
                 const { saveId, newName } = data || {};
@@ -530,35 +520,13 @@ module.exports = function(io) {
             }
         });
 
-        socket.on('promote_autosave', async (data, callback) => {
+        socket.on('list_games', async (callback) => {
             try {
-                const name = (data?.name || '').trim();
-                if (!name) return callback({ success: false, message: 'Please enter a name' });
-                const saveId = await saveManager.promoteAutosave(name);
-                callback({ success: true, saveId });
+                const games = await saveManager.listGames();
+                games.forEach(g => { g.isLive = roomManager.isGameActive(g.saveId); });
+                callback({ success: true, games });
             } catch (e) {
-                if (e.message?.startsWith('DUPLICATE_NAME:')) {
-                    return callback({ success: false, message: e.message });
-                }
-                callback({ success: false, message: e.message });
-            }
-        });
-
-        socket.on('sync_autosave_with_linked', async (callback) => {
-            try {
-                await saveManager.syncAutosaveWithLinked();
-                callback({ success: true });
-            } catch (e) {
-                callback({ success: false, message: e.message });
-            }
-        });
-
-        socket.on('list_saves', async (callback) => {
-            try {
-                const saves = await saveManager.listSaves();
-                callback({ success: true, saves });
-            } catch (e) {
-                callback({ success: false, saves: [], message: e.message });
+                callback({ success: false, games: [], message: e.message });
             }
         });
 
@@ -592,22 +560,10 @@ module.exports = function(io) {
                 }
 
                 const roomCode = roomManager.createLoadedRoom(save);
-                const lfsId = data.overrideLoadedFromSaveId !== undefined
-                    ? data.overrideLoadedFromSaveId
-                    : data.saveId;
-                roomManager.getRoom(roomCode).gameState.loadedFromSaveId = lfsId;
-
-                // If loading autosave with a linked UNS, use the UNS's name as the room display name
-                if (data.saveId === 'autosave' && lfsId && lfsId !== 'autosave') {
-                    try {
-                        const linkedSave = await saveManager.loadSave(lfsId);
-                        if (linkedSave?.name) {
-                            roomManager.getRoom(roomCode).saveName = linkedSave.name;
-                        }
-                    } catch (e) {
-                        // non-fatal — saveName stays null
-                    }
-                }
+                const loadedRoom = roomManager.getRoom(roomCode);
+                loadedRoom.gameState.savedAsId = data.saveId;
+                delete loadedRoom.gameState.loadedFromSaveId;
+                loadedRoom.gameState.gameName = save.name || null;
 
                 roomManager.joinLoadedRoom(roomCode, socket.id, hostName);
                 if (data.secondName) {
